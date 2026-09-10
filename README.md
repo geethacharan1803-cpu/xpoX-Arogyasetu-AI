@@ -1,87 +1,120 @@
 # ArogyaSetu AI 🏥🌿
 
-> **AI-Powered, Multilingual, Offline-Ready Rural Healthcare Platform**  
-> Bridging the critical care gap between rural patients, frontline ASHA workers, and Primary Health Centre (PHC) doctors.
+> **AI-Powered, Multilingual, Offline-Aware Rural Healthcare Platform**  
+> *«From a patient's voice in the village to a doctor's desk — and back to the patient in their own language.»*
 
 ---
 
-## 🌟 Overview
+## 🌟 Overview & Mission
 
-Rural healthcare in India faces severe challenges: language barriers, doctor shortages, connectivity dropouts, and fragmented patient records. **ArogyaSetu AI** provides an accessible, mobile-first ecosystem tailored specifically for community health workers and rural communities:
+Rural healthcare in India faces four acute bottlenecks: language barriers between dialect-speaking villagers and clinical systems, acute PHC doctor shortages, connectivity dropouts in remote habitations, and fragmented care records.
 
-- **ASHA-Worker Friendly:** High contrast, thumb-friendly touch targets, minimal typing, visual cues.
-- **Multilingual & Voice-First:** Voice queries and text-to-speech in Telugu, Hindi, and English (ArogyaVani).
-- **Human-in-the-Loop Safety:** AI assists with triage and summarization, but never diagnoses or prescribes — medical decisions remain strictly with PHC doctors.
-- **Offline Resilience:** Works with local storage caching and clear sync indicators for patchy rural networks.
-- **Fast & Zero-Config Demo:** Full demo dataset pre-loaded; runs standalone with zero setup or API keys required.
+**ArogyaSetu AI** solves this by acting as an intelligent, safety-governed communication bridge:
+- **ASHA-Worker Centric:** Large touch targets, minimal typing, voice-first input, and low-literacy friendly visual indicators.
+- **Multilingual Vernacular Pipeline:** Native speech recognition and TTS in **Telugu (`te-IN`)**, **Hindi (`hi-IN`)**, and **English (`en-IN`)**. Original dialect transcripts are strictly preserved in the clinical record rather than silently overwritten.
+- **Strict Medical AI Safety:** The AI is the bridge, NOT the doctor. It extracts structured symptoms and classifies urgency (*Emergency*, *Urgent*, *Routine*), but never independently prescribes or diagnoses. Only certified PHC Medical Officers authorize prescriptions.
+- **Offline-First Resilience:** Visual states (**ONLINE**, **OFFLINE**, **SYNCING**, **SYNCED**, **SYNC FAILED**) with local storage caching for patchy 2G/3G networks.
 
 ---
 
-## 👥 Supported Roles & Workflows
+## 🧩 The Four Core Modules
 
-### 1. 👩‍⚕️ ASHA Worker Portal
-- **Dashboard:** At-a-glance metrics (active patients, high-risk cases, pending follow-ups, sync status).
-- **Patient Registry (`/asha/patients`):** Searchable community directory with complete history and one-click new patient registration.
-- **Smart Triage & Health Tickets (`/asha/tickets`):** Structured symptom intake generating severity-tagged health tickets.
-- **High-Risk Pregnancy Monitoring (`/asha/pregnancy`):** Track trimester milestones, hemoglobin levels, and danger signs.
-- **SevaConnect Referrals (`/asha/referrals`):** Seamless digital referrals from village to nearest PHC or district hospital.
-- **Follow-Up Scheduler (`/asha/followups`):** Due today, overdue, and upcoming home visits.
-- **ArogyaVani Voice Assistant (`/asha/voice`):** Speech-to-speech in Telugu, Hindi, and English for hands-free clinical notes and field queries.
-- **SwasthyaGyan (`/asha/education`):** Audio-narrated community health guides (maternal health, immunization, sanitation).
-- **Sync Center (`/asha/sync`):** Online/offline status monitor and sync trigger.
+### 1. 🎙️ ArogyaVani (Voice-First Triage)
+- Speech-to-Speech interaction in Telugu, Hindi, and English.
+- Captures native dialect audio, produces verifiable transcripts, and classifies triage urgency.
+- Provides immediate safe vernacular guidance to the patient and generates doctor-facing clinical English summaries.
+- One-click translation to structured Health Tickets.
 
-### 2. 🩺 PHC Doctor Portal
-- **Doctor Dashboard (`/doctor/dashboard`):** Inbound referrals, high-priority triage alerts, pending health ticket reviews.
-- **Clinical Referrals (`/doctor/referrals`):** Review ASHA notes, update patient disposition, and coordinate hospital admissions.
-- **e-Prescriptions (`/doctor/prescriptions`):** Verified prescription creation by certified doctors (with explicit AI safety disclaimers).
-- **Patient Records (`/doctor/patients`):** Long-term longitudinal health history.
+### 2. 📋 VaidyaSahayak (ASHA / ANM Clinical Assistant)
+- **Patient Directory & Registration (`/asha/patients`):** Rapid field registration with gestational tracking and chronic condition screening.
+- **Health Ticket Hub (`/asha/tickets`):** End-to-end longitudinal tracking object connecting voice, vitals, doctor review, and follow-ups.
+- **Maternal Health Monitoring (`/asha/pregnancy`):** High-risk pregnancy surveillance, gestational week tracker, and red-flag alerts.
+- **Offline Sync Center (`/asha/sync`):** Explicit sync states and queued field updates.
 
-### 3. 👤 Patient & Family Portal
-- **Patient Home (`/patient/home`):** Simple interface for rural patients and caretakers.
-- **Active Care Tickets (`/patient/ticket`):** Real-time status of doctor visits and referrals.
-- **Upcoming Follow-Ups (`/patient/followups`):** Visual calendar of upcoming home visits and medication schedules.
-- **Voice Help & Health Guides:** Direct access to ArogyaVani and SwasthyaGyan audio library.
+### 3. 🔄 SevaConnect (Care Coordination & Referral Network)
+- **Referral Lifecycle (`/asha/referrals` & `/doctor/referrals`):** Village-to-PHC transfer management with priority tagging (High, Medium, Routine).
+- **Follow-up Engine (`/asha/followups` & `/doctor/followups`):** Due Today, Overdue, and Upcoming home visits with one-click completion.
+- **Healthcare Facilities Directory (`/asha/facilities`):** Locality-based PHC, CHC, and District Hospital guide with real service indicators.
 
-### 4. 🏛️ Health Administrator Portal
-- **System Dashboard (`/admin/dashboard`):** District-wide statistics, coverage rates, and active caseload.
-- **PHC Directory (`/admin/phcs`):** Primary health centres, bed availability, and referral capacity.
-- **Field Worker Registry (`/admin/workers`):** ASHA worker assignments and community reach.
-- **System Analytics (`/admin/analytics`):** Real-time metrics on referral turnaround and maternal outcomes.
+### 4. 📚 SwasthyaGyan (Vernacular Community Health Education)
+- Categorized public health modules: Maternal Health, Child Immunization, Nutrition, Water Sanitation, and Seasonal Epidemic prevention.
+- Audio narration (TTS) for non-literate community members.
+
+---
+
+## 🎫 Central Object: The Health Ticket
+
+Every patient journey is unified through a unique Health Ticket (e.g. `HT-2026-000124`):
+
+```text
+Patient Voice (Telugu/Hindi)
+        ↓
+Speech-to-Text (Preserved Original Transcript)
+        ↓
+Structured Triage (Symptoms + Vitals Screened)
+        ↓
+Unique Health Ticket Generated
+        ↓
+SevaConnect PHC Referral
+        ↓
+Doctor Review at Health Centre
+        ↓
+Certified Doctor Prescription (Medicines + Dosage Locked)
+        ↓
+Verified Vernacular Patient Explainer ("Voice back to Patient")
+        ↓
+ASHA Field Follow-up Scheduled
+```
+
+---
+
+## 👥 Supported Roles & Dashboards
+
+| Role | Default Credentials / Switcher | Core Features |
+| :--- | :--- | :--- |
+| **👩‍⚕️ ASHA Worker** | Role Switcher ➔ ASHA Worker | Patient Registration, ArogyaVani Voice Intake, Smart Triage, Maternal Tracking, Follow-ups, Sync Center |
+| **🩺 PHC Doctor** | Role Switcher ➔ Doctor | Inbound Referrals, Clinical Ticket Review, e-Prescriptions with AI Explainer, Longitudinal Patient Records |
+| **👤 Patient / Family** | Role Switcher ➔ Patient | Vernacular Voice Help, Active Health Ticket Timeline, Appointment Reminders, Audio Education |
+| **🏛️ Health Administrator** | Role Switcher ➔ Administrator | District-Wide KPI Dashboards, Facility & Bed Oversight, Referral Turnaround Analytics, Field Workforce Reach |
+
+---
+
+## 🛡️ Medical AI Safety & Prescription Guardrails
+
+1. **Human-in-the-Loop:** AI assists with translation and triage summarization. It is strictly prohibited from altering medicines, dosages, frequencies, or durations.
+2. **Audit Provenance:** Original voice transcripts are permanently linked alongside doctor review notes.
+3. **Verified Patient Explainer:** When a doctor authorizes a prescription, the system translates the instructions into Telugu or Hindi (e.g., *"Take 1 tablet after meals with water twice daily"*) and allows audio playback without altering any clinical parameter.
+4. **Deterministic Fallbacks:** If external AI services or network connections are unavailable, the platform uses standardized clinical guideline algorithms and cached responses.
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Framework:** [Next.js 14](https://nextjs.org/) (App Router, dynamic client rendering, optimized static generation)
-- **UI & Styling:** Vanilla CSS Design System with accessible HSL color palettes, custom responsive layouts, and zero heavy CSS frameworks
+- **Frontend & Routing:** [Next.js 14](https://nextjs.org/) (App Router, Client-Side Rendering, 0-blocking static prerendering)
+- **Styling:** Custom Vanilla CSS Design System with accessible HSL color palettes and zero heavy framework bloat (First Load JS: `87.4 kB`).
 - **Icons:** [Lucide React](https://lucide.dev/)
-- **Voice & Speech:** Web Speech Recognition API + Web Speech Synthesis (TTS) with Telugu (`te-IN`), Hindi (`hi-IN`), and English (`en-IN`)
-- **AI Integration:** Google Gemini API integration (`/api/ai`, `/api/translate`) with graceful built-in fallback to rich demo responses when API keys are absent
+- **Audio & Speech:** Web Speech Recognition API + Web Speech Synthesis (Telugu `te-IN`, Hindi `hi-IN`, English `en-IN`).
+- **AI & Translation:** Google Gemini API (`/api/ai`, `/api/translate`) with built-in context-aware offline clinical dictionary fallback.
+- **Hosting Target:** [Vercel](https://vercel.com/)
 
 ---
 
 ## 🚀 Quick Start (Local Run)
 
-### 1. Install Dependencies
 ```bash
+# 1. Install dependencies
 npm install
-```
 
-### 2. Configure Environment (Optional)
-Copy `.env.example` to `.env.local`:
-```bash
+# 2. Configure Environment (Optional)
 cp .env.example .env.local
-```
-*(ArogyaSetu AI includes a complete offline demo engine and works fully without any API key)*
 
-### 3. Run Development Server
-```bash
+# 3. Start local development server
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
-### 4. Build for Production
 ```bash
+# 4. Production build & test
 npm run build
 npm run start
 ```
@@ -90,18 +123,23 @@ npm run start
 
 ## 🚢 Deploying to Vercel
 
-ArogyaSetu AI is pre-configured and tested for 1-click zero-error Vercel deployment:
-
-1. Push this repository to GitHub/GitLab.
-2. Go to [Vercel](https://vercel.com/) and click **"Add New Project"**.
-3. Import the repository.
-4. (Optional) Add `GEMINI_API_KEY` in Environment Variables if you want live Gemini AI generation.
-5. Click **"Deploy"**. The build will run `npm run build` and deploy within 60 seconds.
+1. Push to your GitHub repository:
+   ```bash
+   git push origin main
+   ```
+2. In [Vercel Dashboard](https://vercel.com/), click **"Add New Project"** and import `xpoX-Arogyasetu-AI`.
+3. *(Optional)* Add `GEMINI_API_KEY` under Environment Variables.
+4. Click **"Deploy"**. The build completes in ~30 seconds with 0 configuration required.
 
 ---
 
-## 🛡️ Medical AI Safety Principles
+## 🏆 Hackathon Demo Flow (3-Minute Script)
 
-1. **Human Doctor in Control:** The platform strictly prohibits AI from generating definitive diagnoses or prescriptions. Only licensed PHC doctors can authorize prescriptions.
-2. **Deterministic Fallbacks:** Rural network outages never block field operations; triage logic defaults to standardized protocol-based checklists.
-3. **Data Privacy:** Local storage is used for offline caching; sensitive health records include clear role-based access separation.
+1. **Login:** Select **ASHA Worker** on the login screen.
+2. **Patient Registration:** Navigate to **Patients** ➔ click **"Register Patient"** ➔ add a new village member.
+3. **Voice Intake (ArogyaVani):** Open **ArogyaVani** ➔ select Telugu (`te-IN`) ➔ click a sample prompt (*"High Fever & Chills"*) or speak into the microphone ➔ notice the original Telugu transcript, the urgency alert, and the English doctor summary. Click **"Speak to Patient"** to demonstrate vernacular audio output.
+4. **Health Ticket:** Click **"Generate Health Ticket"** ➔ review vitals, symptoms, and the multi-step timeline.
+5. **Referral:** Go to **Referrals** ➔ click **"New Referral"** ➔ send patient to **PHC Rampur**.
+6. **Doctor Review:** Switch role to **Doctor** ➔ open **Referrals** ➔ click **"Accept Referral"** ➔ click **"Add Prescription"**.
+7. **Safe Prescription & Voice Back to Patient:** Click **"Authorize & Save Prescription"** ➔ play the verified audio explanation in **Telugu** or **Hindi** for the patient.
+8. **Admin Oversight:** Switch role to **Admin** ➔ view district-wide referral trends, PHC facility beds, and analytics.
