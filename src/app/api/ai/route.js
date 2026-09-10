@@ -10,9 +10,31 @@ export async function POST(request) {
 
     const apiKey = process.env.GEMINI_API_KEY;
 
+    const getDemoResponse = (query, ctx) => {
+      const q = (query + ' ' + (ctx || '')).toLowerCase();
+
+      if (q.includes('chest') || q.includes('breath') || q.includes('bleeding') || q.includes('unconscious')) {
+        return 'CRITICAL TRIAGE ALERT: Symptoms may indicate a medical emergency. Recommend immediate escalation and urgent transfer to the nearest Community Health Centre (CHC) or District Hospital via 108 Emergency Services. Do not delay for diagnostic testing.';
+      }
+      if (q.includes('pregnan') || q.includes('anc') || q.includes('fetal') || q.includes('గర్భం') || q.includes('गर्भावस्था')) {
+        return 'Maternal Care Protocol: Ensure regular Antenatal Care (ANC) monitoring. Track blood pressure and urine protein to screen for preeclampsia. If maternal danger signs appear (severe headache, visual disturbances, epigastric pain, or decreased fetal movements), immediately arrange hospital review.';
+      }
+      if (q.includes('sugar') || q.includes('diabet') || q.includes('glucose')) {
+        return 'Diabetes Management Guidance: Maintain glycemic log. If fasting blood sugar exceeds 140 mg/dL or postprandial exceeds 180 mg/dL, schedule PHC Medical Officer evaluation for dosage adjustment. Avoid dietary refined carbohydrates.';
+      }
+      if (q.includes('fever') || q.includes('temperature') || q.includes('జ్వరం') || q.includes('बुखार')) {
+        return 'Fever Protocol Guidance: Monitor oral/axillary temperature every 4 hours. Maintain oral hydration with boiled water or ORS. If high fever persists beyond 48 hours or is accompanied by rigors, rash, or altered sensorium, refer for malaria and dengue screening.';
+      }
+      if (q.includes('vaccin') || q.includes('immun') || q.includes('టీకా')) {
+        return 'National Immunization Schedule Guidance: Follow age-appropriate universal immunization guidelines. Ensure pentavalent, rotavirus, and measles-rubella vaccines are up to date. Document batch numbers in the mother-child tracking register.';
+      }
+
+      return 'General Community Healthcare Guidance: Document patient symptoms, measure current vital signs (BP, Pulse, Temperature, SpO2), and generate a Health Ticket for PHC Medical Officer review. Maintain oral hydration and rest.';
+    };
+
     if (!apiKey || apiKey === 'demo') {
       return NextResponse.json({
-        response: 'Insufficient verified information. Please consult a healthcare professional.',
+        response: getDemoResponse(prompt, context),
         mode: 'demo',
         disclaimer: 'This AI assistant does not provide medical diagnoses or prescriptions. Always consult a qualified healthcare professional.',
       });

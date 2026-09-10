@@ -109,18 +109,53 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Patient History Summary */}
-          {patient && (
-            <div className="card">
-              <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Patient History Summary</h3>
-              <div className="info-grid">
-                <span className="info-label">Age / Gender</span><span className="info-value">{patient.age}y {patient.gender}</span>
-                <span className="info-label">Conditions</span><span className="info-value">{patient.conditions.join(', ')}</span>
-                <span className="info-label">Allergies</span><span className="info-value">{patient.allergies.join(', ')}</span>
-                <span className="info-label">Previous Visits</span><span className="info-value">{patient.visits.length} recorded</span>
+          {/* Prescriptions & Instructions */}
+          {patient && patient.prescriptions && patient.prescriptions.length > 0 && (
+            <div className="card" style={{ marginBottom: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-md)' }}>
+                <h3 className="card-title" style={{ marginBottom: 0 }}>Doctor Prescriptions</h3>
+                <span className="badge badge-success">Verified</span>
               </div>
+              {patient.prescriptions.map((rx, i) => (
+                <div key={i} style={{ marginBottom: 'var(--space-sm)' }}>
+                  <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Prescribed by {rx.doctor} on {rx.date}</div>
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr><th>Medicine</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr>
+                      </thead>
+                      <tbody>
+                        {rx.medicines.map((m, j) => (
+                          <tr key={j}>
+                            <td><strong>{m.name}</strong></td>
+                            <td>{m.dosage}</td>
+                            <td>{m.frequency}</td>
+                            <td>{m.duration}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
+
+          {/* Quick Actions */}
+          <div className="card">
+            <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Care Continuity Actions</h3>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => router.push('/asha/referrals')}>
+                Create PHC Referral
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => router.push('/asha/followups')}>
+                Schedule Follow-up
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => router.push('/asha/voice')}>
+                Voice Re-evaluation
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

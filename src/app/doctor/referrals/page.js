@@ -7,7 +7,15 @@ import { ArrowRightLeft, User, FileText, CheckCircle } from 'lucide-react';
 
 export default function DoctorReferrals() {
   const router = useRouter();
+  const [referrals, setReferrals] = useState(DEMO_REFERRALS);
   const [expandedId, setExpandedId] = useState(null);
+  const [acceptedNotice, setAcceptedNotice] = useState('');
+
+  const handleAccept = (refId) => {
+    setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'accepted' } : r));
+    setAcceptedNotice(`Referral ${refId} has been accepted. Clinical review in progress.`);
+    setTimeout(() => setAcceptedNotice(''), 4000);
+  };
 
   const STATUS_LABELS = {
     'pending': { label: 'Pending', badge: 'badge-warning' },
@@ -23,11 +31,18 @@ export default function DoctorReferrals() {
         <p className="page-subtitle">Review and manage patient referrals</p>
       </div>
 
-      {DEMO_REFERRALS.length === 0 ? (
+      {acceptedNotice && (
+        <div className="alert alert-success" style={{ marginBottom: 'var(--space-md)' }}>
+          <CheckCircle size={18} />
+          <span>{acceptedNotice}</span>
+        </div>
+      )}
+
+      {referrals.length === 0 ? (
         <div className="card"><div className="empty-state"><p className="empty-state-title">No referrals</p></div></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          {DEMO_REFERRALS.map(ref => {
+          {referrals.map(ref => {
             const patient = getPatientById(ref.patientId);
             const status = STATUS_LABELS[ref.status] || { label: ref.status, badge: 'badge-neutral' };
             const isExpanded = expandedId === ref.id;
@@ -70,7 +85,11 @@ export default function DoctorReferrals() {
                     )}
 
                     <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)', flexWrap: 'wrap' }}>
-                      <button className="btn btn-primary btn-sm"><CheckCircle size={14} /> Accept Referral</button>
+                      {ref.status !== 'accepted' && (
+                        <button className="btn btn-primary btn-sm" onClick={() => handleAccept(ref.id)}>
+                          <CheckCircle size={14} /> Accept Referral
+                        </button>
+                      )}
                       <button className="btn btn-secondary btn-sm" onClick={() => router.push(`/doctor/patients`)}>
                         <User size={14} /> Full Profile
                       </button>

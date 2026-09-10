@@ -2,13 +2,17 @@
 
 import { useState } from 'react';
 import { DEMO_PATIENTS } from '@/lib/demo-data';
-import { Pill, AlertTriangle, Search } from 'lucide-react';
+import { Pill, AlertTriangle, Volume2, Globe, CheckCircle } from 'lucide-react';
 
 export default function DoctorPrescriptions() {
-  const [selectedPatient, setSelectedPatient] = useState('');
-  const [medicines, setMedicines] = useState([{ name: '', dosage: '', frequency: '', duration: '' }]);
-  const [notes, setNotes] = useState('');
+  const [selectedPatient, setSelectedPatient] = useState('P-2026-002');
+  const [medicines, setMedicines] = useState([
+    { name: 'Metformin', dosage: '500mg', frequency: 'Twice daily', duration: '30 days' },
+    { name: 'Amlodipine', dosage: '5mg', frequency: 'Once daily (morning)', duration: '30 days' },
+  ]);
+  const [notes, setNotes] = useState('Monitor fasting sugar and record daily blood pressure with ASHA Priya.');
   const [saved, setSaved] = useState(false);
+  const [verifiedExplainer, setVerifiedExplainer] = useState(null);
 
   const addMedicine = () => {
     setMedicines([...medicines, { name: '', dosage: '', frequency: '', duration: '' }]);
@@ -29,23 +33,54 @@ export default function DoctorPrescriptions() {
   const handleSave = (e) => {
     e.preventDefault();
     setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+
+    const patient = DEMO_PATIENTS.find(p => p.id === selectedPatient) || DEMO_PATIENTS[0];
+    const medList = medicines.filter(m => m.name.trim()).map(m => `${m.name} (${m.dosage}, ${m.frequency})`).join(', ');
+
+    // Generate verified explainer that preserves exact medication and dose
+    const explainer = {
+      patientName: patient.name,
+      patientId: patient.id,
+      prescribedMedicines: medicines.filter(m => m.name.trim()),
+      telugu: `రోగి ${patient.name} కొరకు వైద్యుల సూచనలు: ${medList}. మందులను ప్రతిరోజూ క్రమం తప్పకుండా భోజనం తర్వాత తగినంత నీటితో మాత్రమే వేసుకోవాలి. మోతాదు మార్చవద్దు.`,
+      hindi: `मरीज ${patient.name} के लिए डॉक्टर की सलाह: ${medList}। दवाइयां नियमित रूप से भोजन के बाद पर्याप्त पानी के साथ लें। खुराक में कोई बदलाव न करें।`,
+      english: `Verified Instructions for ${patient.name}: ${medList}. Take strictly as directed after meals. Do not alter dose or duration without consulting your PHC doctor.`,
+      notes: notes,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+
+    setVerifiedExplainer(explainer);
+  };
+
+  const speak = (text, lang) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = 0.88;
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Prescriptions</h1>
-        <p className="page-subtitle">Create doctor-approved prescriptions</p>
+        <h1 className="page-title">Prescriptions & Care Directives</h1>
+        <p className="page-subtitle">Clinician-authorized prescriptions with verified patient vernacular instructions</p>
       </div>
 
-      <div className="alert alert-warning">
+      <div className="alert alert-warning" style={{ marginBottom: 'var(--space-md)' }}>
         <AlertTriangle size={18} />
-        <span>AI does not prescribe medicines. Only the attending doctor creates prescriptions. AI may only translate or explain approved instructions.</span>
+        <span>
+          <strong>AI Safety Protocol:</strong> AI is strictly prohibited from altering or creating prescriptions. Only certified Medical Officers prescribe medications. AI is only permitted to translate and explain approved clinician directives.
+        </span>
       </div>
 
       {saved && (
-        <div className="alert alert-success">Prescription saved successfully.</div>
+        <div className="alert alert-success" style={{ marginBottom: 'var(--space-md)' }}>
+          <CheckCircle size={18} />
+          <span>Prescription authorized and locked into patient care continuity record.</span>
+        </div>
       )}
 
       <div className="card">
@@ -97,11 +132,58 @@ export default function DoctorPrescriptions() {
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-            <button type="submit" className="btn btn-primary"><Pill size={16} /> Save Prescription</button>
-            <button type="button" className="btn btn-secondary">Cancel</button>
+            <button type="submit" className="btn btn-primary"><Pill size={16} /> Authorize & Save Prescription</button>
+            <button type="button" className="btn btn-secondary" onClick={() => setVerifiedExplainer(null)}>Reset</button>
           </div>
         </form>
       </div>
+
+      {verifiedExplainer && (
+        <div className="card" style={{ marginTop: 'var(--space-lg)', borderLeft: '4px solid var(--color-primary)' }}>
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+            <div>
+              <h3 className="card-title">Verified Patient Explainer — &ldquo;Voice Back to Patient&rdquo;</h3>
+              <p className="text-xs text-muted">Generated for {verifiedExplainer.patientName} ({verifiedExplainer.patientId}) at {verifiedExplainer.timestamp}</p>
+            </div>
+            <span className="badge badge-success">Audit Trail Preserved</span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', marginTop: 'var(--space-md)' }}>
+            {/* Telugu Explainer */}
+            <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
+                <span className="font-semibold text-sm">తెలుగు (Telugu Patient Instructions)</span>
+                <button className="btn btn-sm btn-primary" onClick={() => speak(verifiedExplainer.telugu, 'te-IN')}>
+                  <Volume2 size={14} /> Listen in Telugu
+                </button>
+              </div>
+              <p className="text-sm font-medium" style={{ lineHeight: 1.6 }}>{verifiedExplainer.telugu}</p>
+            </div>
+
+            {/* Hindi Explainer */}
+            <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
+                <span className="font-semibold text-sm">हिन्दी (Hindi Patient Instructions)</span>
+                <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.hindi, 'hi-IN')}>
+                  <Volume2 size={14} /> Listen in Hindi
+                </button>
+              </div>
+              <p className="text-sm font-medium" style={{ lineHeight: 1.6 }}>{verifiedExplainer.hindi}</p>
+            </div>
+
+            {/* English Explainer */}
+            <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
+                <span className="font-semibold text-sm">English Clinical Copy</span>
+                <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.english, 'en-IN')}>
+                  <Volume2 size={14} /> Listen in English
+                </button>
+              </div>
+              <p className="text-sm text-secondary">{verifiedExplainer.english}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

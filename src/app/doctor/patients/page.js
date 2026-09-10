@@ -27,7 +27,7 @@ export default function DoctorPatients() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
           {results.map(p => (
-            <div key={p.id} className="patient-card" onClick={() => router.push(`/asha/patients/${p.id}`)}>
+            <div key={p.id} className="patient-card" onClick={() => router.push(`/doctor/patients/${p.id}`)}>
               <div className="patient-avatar">{p.name.split(' ').map(w => w[0]).join('').substring(0, 2)}</div>
               <div className="patient-info">
                 <div className="patient-name">{p.name}</div>

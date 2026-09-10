@@ -16,7 +16,7 @@ export default function DoctorFollowups() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
           {DEMO_FOLLOWUPS.map(fu => (
-            <div key={fu.id} className="card" style={{ padding: 'var(--space-md)', cursor: 'pointer' }} onClick={() => router.push(`/asha/patients/${fu.patientId}`)}>
+            <div key={fu.id} className="card" style={{ padding: 'var(--space-md)', cursor: 'pointer' }} onClick={() => router.push(`/doctor/patients/${fu.patientId}`)}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
                 <div>
                   <div className="font-semibold">{fu.patientName}</div>

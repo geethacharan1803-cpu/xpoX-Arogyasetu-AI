@@ -15,14 +15,20 @@ const STATUS_CONFIG = {
 export default function AshaFollowups() {
   const router = useRouter();
   const [filter, setFilter] = useState('all');
+  const [followups, setFollowups] = useState(DEMO_FOLLOWUPS);
 
-  const dueToday = DEMO_FOLLOWUPS.filter(f => f.status === 'due-today');
-  const overdue = DEMO_FOLLOWUPS.filter(f => f.status === 'overdue');
-  const upcoming = DEMO_FOLLOWUPS.filter(f => f.status === 'upcoming');
+  const handleMarkComplete = (e, fuId) => {
+    e.stopPropagation();
+    setFollowups(prev => prev.map(f => f.id === fuId ? { ...f, status: 'completed' } : f));
+  };
+
+  const dueToday = followups.filter(f => f.status === 'due-today');
+  const overdue = followups.filter(f => f.status === 'overdue');
+  const upcoming = followups.filter(f => f.status === 'upcoming');
 
   const filtered = filter === 'all'
-    ? DEMO_FOLLOWUPS
-    : DEMO_FOLLOWUPS.filter(f => f.status === filter);
+    ? followups
+    : followups.filter(f => f.status === filter);
 
   return (
     <div>
@@ -86,7 +92,13 @@ export default function AshaFollowups() {
                       {fu.type} | Due: {fu.dueDate}
                     </div>
                   </div>
-                  <button className="btn btn-sm btn-primary">Mark Complete</button>
+                  {fu.status !== 'completed' ? (
+                    <button className="btn btn-sm btn-primary" onClick={(e) => handleMarkComplete(e, fu.id)}>
+                      Mark Complete
+                    </button>
+                  ) : (
+                    <span className="badge badge-success">Completed</span>
+                  )}
                 </div>
               </div>
             );

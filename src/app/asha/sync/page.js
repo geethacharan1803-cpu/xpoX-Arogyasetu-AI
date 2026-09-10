@@ -34,10 +34,10 @@ export default function AshaSyncPage() {
   };
 
   const statusConfig = {
-    synced: { icon: CheckCircle, label: 'Synced', desc: 'All data is up to date', color: 'var(--color-success)', badge: 'badge-success' },
-    syncing: { icon: RefreshCw, label: 'Syncing...', desc: 'Uploading local changes', color: 'var(--color-primary)', badge: 'badge-primary' },
-    offline: { icon: WifiOff, label: 'Offline', desc: 'Your information will sync when the connection is restored', color: 'var(--color-warning)', badge: 'badge-warning' },
-    failed: { icon: AlertTriangle, label: 'Sync Failed', desc: 'Please try again', color: 'var(--color-danger)', badge: 'badge-danger' },
+    synced: { icon: CheckCircle, label: 'SYNCED', desc: 'All local field records synchronized with PHC servers', color: 'var(--color-success)', badge: 'badge-success' },
+    syncing: { icon: RefreshCw, label: 'SYNCING...', desc: 'Uploading local records and syncing PHC queues', color: 'var(--color-primary)', badge: 'badge-primary' },
+    offline: { icon: WifiOff, label: 'OFFLINE', desc: 'Working from local storage cache. Changes will auto-sync when network returns.', color: 'var(--color-warning)', badge: 'badge-warning' },
+    failed: { icon: AlertTriangle, label: 'SYNC FAILED', desc: 'Connection timed out. Data is preserved safely in local storage.', color: 'var(--color-danger)', badge: 'badge-danger' },
   };
 
   const current = statusConfig[syncStatus];
