@@ -73,9 +73,20 @@ export async function GET(request) {
   }
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}
+
 export async function POST(request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const {
       name,
       age,
@@ -99,13 +110,13 @@ export async function POST(request) {
       checkDuplicateOnly,
     } = body;
 
-    if (!name || !name.trim()) {
-      return NextResponse.json({ error: 'Patient name is required' }, { status: 400 });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return NextResponse.json({ error: 'Patient full name is required' }, { status: 400 });
     }
 
     const trimmedName = name.trim();
     const trimmedPhone = (phone || '').trim();
-    const trimmedVillage = (village || 'Rampur').trim();
+    const trimmedVillage = (village || 'Rampur').trim() || 'Rampur';
 
     // Check for duplicate patient (matching name AND phone, or matching name AND village)
     let duplicateQuery = `SELECT * FROM patients WHERE LOWER(name) = LOWER(?)`;
@@ -115,7 +126,9 @@ export async function POST(request) {
       duplicateQuery += ` AND (phone = ? OR LOWER(village) = LOWER(?))`;
       duplicateParams.push(trimmedPhone, trimmedVillage);
     } else {
-      duplicateQuery += ` AND LOWER(village) = LOWER(?)`;
+      duplicateQuery += ` AND LOWER(village) = LOWER(?))`;
+      // Fix parenthesis if single condition
+      duplicateQuery = `SELECT * FROM patients WHERE LOWER(name) = LOWER(?) AND LOWER(village) = LOWER(?)`;
       duplicateParams.push(trimmedVillage);
     }
 
@@ -134,19 +147,65 @@ export async function POST(request) {
       });
     }
 
-    // Generate consecutive Patient ID
-    const countRes = await queryOne('SELECT COUNT(*) as count FROM patients');
-    const nextNum = parseInt(countRes?.count || 0) + 1;
-    const patientId = `P-2026-${String(nextNum).padStart(3, '0')}`;
+    // Generate consecutive, collision-proof Patient ID
+    const existingIds = await query("SELECT patient_id FROM patients WHERE patient_id LIKE 'P-2026-%'");
+    let maxSeq = 0;
+    for (const row of existingIds.rows || []) {
+      const match = (row.patient_id || '').match(/^P-2026-(\d+)$/);
+      if (match) {
+        const seq = parseInt(match[1], 10);
+        if (seq > maxSeq) maxSeq = seq;
+      }
+    }
+    let nextNum = Math.max(maxSeq + 1, (existingIds.rows ? existingIds.rows.length : 0) + 1, 1);
+    let patientId = `P-2026-${String(nextNum).padStart(3, '0')}`;
+
+    // Guarantee uniqueness
+    let collision = await queryOne('SELECT id FROM patients WHERE patient_id = ? OR id = ?', [patientId, patientId]);
+    while (collision) {
+      nextNum++;
+      patientId = `P-2026-${String(nextNum).padStart(3, '0')}`;
+      collision = await queryOne('SELECT id FROM patients WHERE patient_id = ? OR id = ?', [patientId, patientId]);
+    }
+
     const todayStr = new Date().toISOString().split('T')[0];
+    const nowIso = new Date().toISOString();
+
+    // Safe number parsers (guaranteed never to return NaN)
+    const safeParseInt = (val, fallback = null) => {
+      if (val === undefined || val === null || val === '') return fallback;
+      const parsed = parseInt(val, 10);
+      return isNaN(parsed) ? fallback : parsed;
+    };
+
+    const safeParseFloat = (val, fallback = null) => {
+      if (val === undefined || val === null || val === '') return fallback;
+      const parsed = parseFloat(val);
+      return isNaN(parsed) ? fallback : parsed;
+    };
+
+    const cleanAge = safeParseInt(age, 30);
+    const cleanPulse = safeParseInt(pulse, 76);
+    const cleanTemp = safeParseFloat(temp, 98.6);
+    const cleanWeight = safeParseFloat(weight, 60.0);
+    const cleanSpo2 = safeParseInt(spo2, 98);
+    const cleanBloodSugar = safeParseInt(bloodSugar, null);
+    const cleanPregnancyWeek = isPregnant ? safeParseInt(pregnancyWeek, 12) : null;
+    const finalPhone = trimmedPhone || ('9876' + Math.floor(100000 + Math.random() * 900000));
+    const cleanGender = gender || 'Female';
+    const cleanBloodGroup = bloodGroup || 'B+';
+    const cleanAddress = (address || '').trim() || `${trimmedVillage}, Ward 1`;
+    const cleanCreator = createdBy || 'ASHA Priya';
 
     const conditionsArray = Array.isArray(conditions)
-      ? conditions
+      ? conditions.filter(Boolean)
       : (conditions ? String(conditions).split(',').map(c => c.trim()).filter(Boolean) : ['General Health Intake']);
+    if (conditionsArray.length === 0) conditionsArray.push('General Health Intake');
 
     const allergiesArray = Array.isArray(allergies)
-      ? allergies
+      ? allergies.filter(Boolean)
       : (allergies ? String(allergies).split(',').map(a => a.trim()).filter(Boolean) : ['None known']);
+    if (allergiesArray.length === 0) allergiesArray.push('None known');
 
     // 1. Insert Patient
     await query(
@@ -158,19 +217,19 @@ export async function POST(request) {
         patientId,
         patientId,
         trimmedName,
-        parseInt(age) || 30,
-        gender || 'Female',
-        trimmedPhone || '9876XXXX' + Math.floor(10 + Math.random() * 89),
-        address || `${trimmedVillage}, Ward 1`,
+        cleanAge,
+        cleanGender,
+        finalPhone,
+        cleanAddress,
         trimmedVillage,
         emergencyContact || null,
-        bloodGroup || 'B+',
+        cleanBloodGroup,
         isPregnant ? 1 : 0,
-        isPregnant ? parseInt(pregnancyWeek) || 12 : null,
+        cleanPregnancyWeek,
         isPregnant ? 'In 6 months' : null,
         JSON.stringify(conditionsArray),
         JSON.stringify(allergiesArray),
-        createdBy || 'ASHA Priya',
+        cleanCreator,
         todayStr,
         todayStr
       ]
@@ -183,14 +242,14 @@ export async function POST(request) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         patientId,
-        createdBy || 'ASHA Priya',
+        cleanCreator,
         bp || '120/80',
-        parseInt(pulse) || 76,
-        parseFloat(temp) || 98.6,
-        parseFloat(weight) || 60,
-        parseInt(spo2) || 98,
-        bloodSugar ? parseInt(bloodSugar) : null,
-        todayStr
+        cleanPulse,
+        cleanTemp,
+        cleanWeight,
+        cleanSpo2,
+        cleanBloodSugar,
+        nowIso
       ]
     );
 
@@ -199,44 +258,62 @@ export async function POST(request) {
       await query(
         `INSERT INTO patient_problems (patient_id, description, source, recorded_by, created_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [patientId, cond, 'asha_registration', createdBy || 'ASHA Priya', todayStr]
+        [patientId, cond, 'asha_registration', cleanCreator, nowIso]
       );
     }
 
     // 4. Insert Initial Visit
     await query(
-      `INSERT INTO hospital_visits (patient_id, facility_name, visit_date, visit_type, doctor, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [patientId, 'Community Outreach', todayStr, 'Field Registration', createdBy || 'ASHA Priya', 'Initial community health registration completed by ASHA.']
+      `INSERT INTO hospital_visits (patient_id, facility_name, visit_date, visit_type, doctor, notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [patientId, 'Community Outreach', todayStr, 'Field Registration', cleanCreator, 'Initial community health registration completed by ASHA.', nowIso]
     );
 
     // 5. Audit Log
     await query(
-      `INSERT INTO audit_logs (user_id, user_role, action, entity, entity_id, details)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [createdBy || 'ASHA Priya', 'asha', 'CREATE_PATIENT', 'patients', patientId, `Registered new patient: ${trimmedName} (${patientId}) in ${trimmedVillage}`]
+      `INSERT INTO audit_logs (user_id, user_role, action, entity, entity_id, details, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [cleanCreator, 'asha', 'CREATE_PATIENT', 'patients', patientId, `Registered new patient: ${trimmedName} (${patientId}) in ${trimmedVillage}`, nowIso]
     );
 
     // Fetch created patient
-    const created = await queryOne('SELECT * FROM patients WHERE patient_id = ?', [patientId]);
+    const created = await queryOne('SELECT * FROM patients WHERE patient_id = ? OR id = ?', [patientId, patientId]);
 
     return NextResponse.json({
       success: true,
       patient: {
-        ...created,
-        id: created.patient_id,
+        ...(created || {}),
+        id: patientId,
+        name: trimmedName,
+        age: cleanAge,
+        gender: cleanGender,
+        phone: finalPhone,
+        village: trimmedVillage,
         conditions: conditionsArray,
         allergies: allergiesArray,
-        isPregnant: Boolean(created.is_pregnant),
-        pregnancyWeek: created.pregnancy_week,
-        bloodGroup: created.blood_group,
+        isPregnant: Boolean(isPregnant),
+        pregnancyWeek: cleanPregnancyWeek,
+        bloodGroup: cleanBloodGroup,
         registeredDate: todayStr,
       },
       warning: existing ? 'Possible existing patient with similar name found in records' : null
-    }, { status: 201 });
+    }, {
+      status: 201,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      }
+    });
 
   } catch (error) {
     console.error('Error creating patient:', error);
-    return NextResponse.json({ error: 'Unable to save patient information. Please check the connection and try again.' }, { status: 500 });
+    return NextResponse.json({
+      error: 'Unable to save patient information. Please check the connection and try again.',
+      details: error.message || String(error)
+    }, {
+      status: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      }
+    });
   }
 }

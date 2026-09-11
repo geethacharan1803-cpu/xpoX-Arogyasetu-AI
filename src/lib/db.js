@@ -46,32 +46,45 @@ function getPgPool() {
  * Raw query execution helper (bypasses ensureInitialized recursion).
  */
 async function rawQuery(sql, params = []) {
+  // Normalize parameters: node:sqlite strictly rejects `undefined`. Convert all `undefined` values to `null`.
+  const safeParams = (Array.isArray(params) ? params : []).map(p => (p === undefined ? null : p));
+
   if (isPostgres) {
     const pool = getPgPool();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
-    const res = await pool.query(pgSql, params);
-    return {
-      rows: res.rows,
-      rowCount: res.rowCount,
-    };
+    try {
+      const res = await pool.query(pgSql, safeParams);
+      return {
+        rows: res.rows || [],
+        rowCount: res.rowCount || 0,
+      };
+    } catch (err) {
+      console.error('PostgreSQL Query Error:', err.message, { sql: pgSql, safeParams });
+      throw err;
+    }
   } else {
     const db = getSqliteInstance();
     const cleanSql = sql.trim();
     const isSelect = cleanSql.toUpperCase().startsWith('SELECT') || cleanSql.toUpperCase().startsWith('PRAGMA');
     
-    if (isSelect) {
-      const stmt = db.prepare(cleanSql);
-      const rows = stmt.all(...params);
-      return { rows, rowCount: rows.length };
-    } else {
-      const stmt = db.prepare(cleanSql);
-      const result = stmt.run(...params);
-      return {
-        rows: [],
-        rowCount: result.changes,
-        lastInsertRowid: result.lastInsertRowid,
-      };
+    try {
+      if (isSelect) {
+        const stmt = db.prepare(cleanSql);
+        const rows = stmt.all(...safeParams);
+        return { rows: rows || [], rowCount: rows ? rows.length : 0 };
+      } else {
+        const stmt = db.prepare(cleanSql);
+        const result = stmt.run(...safeParams);
+        return {
+          rows: [],
+          rowCount: result.changes || 0,
+          lastInsertRowid: result.lastInsertRowid,
+        };
+      }
+    } catch (err) {
+      console.error('SQLite Query Error:', err.message, { sql: cleanSql, safeParams });
+      throw err;
     }
   }
 }

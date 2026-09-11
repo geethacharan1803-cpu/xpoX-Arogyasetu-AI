@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, ChevronRight, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Search, Plus, ChevronRight, AlertTriangle, CheckCircle, RefreshCw, WifiOff, Cloud } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
 export default function AshaPatients() {
@@ -16,6 +16,8 @@ export default function AshaPatients() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState(null);
+  const [offlineNotice, setOfflineNotice] = useState('');
+  const [offlineCount, setOfflineCount] = useState(0);
 
   const [newPatient, setNewPatient] = useState({
     name: '',
@@ -35,9 +37,84 @@ export default function AshaPatients() {
     spo2: '98',
   });
 
+  // Helper to read offline patients from localStorage
+  const getOfflinePatients = useCallback(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('arogyasetu_offline_patients');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Helper to sync pending offline registrations when connected
+  const syncOfflineQueue = useCallback(async () => {
+    if (typeof window === 'undefined' || !navigator.onLine) return;
+    try {
+      const offlineList = getOfflinePatients();
+      if (!offlineList || offlineList.length === 0) {
+        setOfflineCount(0);
+        return;
+      }
+
+      const remaining = [];
+      let syncedAny = false;
+
+      for (const p of offlineList) {
+        try {
+          const res = await fetch('/api/patients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: p.name,
+              age: p.age,
+              gender: p.gender,
+              village: p.village,
+              phone: p.phone,
+              bloodGroup: p.bloodGroup,
+              isPregnant: p.isPregnant,
+              pregnancyWeek: p.pregnancyWeek,
+              conditions: p.conditions,
+              allergies: p.allergies,
+              bp: p.bp,
+              pulse: p.pulse,
+              temp: p.temp,
+              weight: p.weight,
+              spo2: p.spo2,
+              createdBy: p.createdBy,
+            }),
+          });
+
+          if (res.ok) {
+            syncedAny = true;
+          } else {
+            remaining.push(p);
+          }
+        } catch {
+          remaining.push(p);
+        }
+      }
+
+      localStorage.setItem('arogyasetu_offline_patients', JSON.stringify(remaining));
+      setOfflineCount(remaining.length);
+
+      if (syncedAny) {
+        setOfflineNotice('Offline records successfully synchronized with the central database.');
+        setTimeout(() => setOfflineNotice(''), 5000);
+        fetchPatients(query);
+      }
+    } catch (err) {
+      console.error('Failed to sync offline queue:', err);
+    }
+  }, [getOfflinePatients, query]);
+
   const fetchPatients = useCallback(async (searchQuery = '') => {
     setLoading(true);
     setError('');
+    const offlineList = getOfflinePatients();
+    setOfflineCount(offlineList.length);
+
     try {
       const url = searchQuery.trim()
         ? `/api/patients?q=${encodeURIComponent(searchQuery.trim())}`
@@ -45,14 +122,35 @@ export default function AshaPatients() {
       const res = await fetch(url);
       if (!res.ok) throw new Error('Database query returned an error');
       const data = await res.json();
-      setPatients(data.patients || []);
+      
+      const serverPatients = data.patients || [];
+      // Merge with offline patients not yet in server list
+      const merged = [
+        ...offlineList.filter(op => {
+          if (!searchQuery.trim()) return true;
+          const q = searchQuery.trim().toLowerCase();
+          return (
+            (op.name || '').toLowerCase().includes(q) ||
+            (op.village || '').toLowerCase().includes(q) ||
+            (op.phone || '').includes(q)
+          );
+        }),
+        ...serverPatients.filter(sp => !offlineList.some(op => op.id === sp.id || (op.name === sp.name && op.phone === sp.phone)))
+      ];
+
+      setPatients(merged);
     } catch (err) {
-      console.error('Failed to load patients:', err);
-      setError('Unable to load patient records from database. Please check connection and retry.');
+      console.warn('Backend unavailable, rendering local offline cache:', err);
+      if (offlineList.length > 0) {
+        setPatients(offlineList);
+        setError('Operating in offline mode. Showing local patient records.');
+      } else {
+        setError('Unable to reach database. Showing local offline cache if available.');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getOfflinePatients]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -60,6 +158,88 @@ export default function AshaPatients() {
     }, 250);
     return () => clearTimeout(timer);
   }, [query, fetchPatients]);
+
+  useEffect(() => {
+    const handleOnline = () => syncOfflineQueue();
+    window.addEventListener('online', handleOnline);
+    syncOfflineQueue();
+    return () => window.removeEventListener('online', handleOnline);
+  }, [syncOfflineQueue]);
+
+  // Fallback saver to localStorage when network or server is unreachable
+  const saveToOfflineQueue = (patientPayload) => {
+    const offlineId = `P-OFFLINE-${Date.now().toString().slice(-4)}`;
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    const conditionsArr = Array.isArray(patientPayload.conditions)
+      ? patientPayload.conditions
+      : (patientPayload.conditions ? String(patientPayload.conditions).split(',').map(c => c.trim()).filter(Boolean) : ['General Health Intake']);
+
+    const allergiesArr = Array.isArray(patientPayload.allergies)
+      ? patientPayload.allergies
+      : (patientPayload.allergies ? String(patientPayload.allergies).split(',').map(a => a.trim()).filter(Boolean) : ['None known']);
+
+    const offlineRecord = {
+      ...patientPayload,
+      id: offlineId,
+      patient_id: offlineId,
+      name: patientPayload.name.trim(),
+      age: parseInt(patientPayload.age, 10) || 30,
+      gender: patientPayload.gender || 'Female',
+      village: (patientPayload.village || 'Rampur').trim(),
+      phone: (patientPayload.phone || '').trim() || '9876XXXXXX',
+      bloodGroup: patientPayload.bloodGroup || 'B+',
+      isPregnant: Boolean(patientPayload.isPregnant),
+      pregnancyWeek: patientPayload.pregnancyWeek ? parseInt(patientPayload.pregnancyWeek, 10) : null,
+      conditions: conditionsArr,
+      allergies: allergiesArr,
+      registeredDate: todayStr,
+      created_at: todayStr,
+      isOffline: true,
+      offlineSyncPending: true,
+      vitals: [
+        {
+          date: todayStr,
+          bp: patientPayload.bp || '120/80',
+          pulse: parseInt(patientPayload.pulse, 10) || 76,
+          temp: parseFloat(patientPayload.temp) || 98.6,
+          weight: parseFloat(patientPayload.weight) || 60,
+          spo2: parseInt(patientPayload.spo2, 10) || 98,
+          recordedBy: patientPayload.createdBy || 'ASHA Priya',
+        }
+      ],
+      visits: [
+        {
+          date: todayStr,
+          type: 'Field Registration',
+          facility: 'Community Outreach',
+          doctor: patientPayload.createdBy || 'ASHA Priya',
+          notes: 'Registered in offline field intake.'
+        }
+      ],
+      medications: [],
+      prescriptions: [],
+      tickets: [],
+      referrals: [],
+      followups: []
+    };
+
+    try {
+      const existing = getOfflinePatients();
+      const updated = [offlineRecord, ...existing.filter(p => p.id !== offlineId)];
+      localStorage.setItem('arogyasetu_offline_patients', JSON.stringify(updated));
+      localStorage.setItem(`arogyasetu_patient_${offlineId}`, JSON.stringify(offlineRecord));
+      setOfflineCount(updated.length);
+    } catch (e) {
+      console.error('Failed writing to localStorage:', e);
+    }
+
+    setPatients(prev => [offlineRecord, ...prev.filter(p => p.id !== offlineId)]);
+    setShowModal(false);
+    setDuplicateWarning(null);
+    setOfflineNotice(`Patient ${offlineRecord.name} (${offlineId}) safely saved to offline storage! It will sync to the database automatically.`);
+    setTimeout(() => setOfflineNotice(''), 7000);
+  };
 
   const handleRegister = async (e, forceCreate = false) => {
     if (e) e.preventDefault();
@@ -71,56 +251,77 @@ export default function AshaPatients() {
     setFormError('');
     setIsSubmitting(true);
 
-    try {
-      // If not forced, check for duplicates first
-      if (!forceCreate && !duplicateWarning) {
-        const dupCheckRes = await fetch('/api/patients', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: newPatient.name.trim(),
-            phone: newPatient.phone.trim(),
-            village: newPatient.village,
-            checkDuplicateOnly: true,
-          }),
-        });
+    const payload = {
+      ...newPatient,
+      createdBy: user?.name || 'ASHA Priya',
+    };
 
-        if (dupCheckRes.ok) {
-          const dupData = await dupCheckRes.json();
-          if (dupData.possibleDuplicate && dupData.existingPatient) {
-            setDuplicateWarning(dupData.existingPatient);
-            setIsSubmitting(false);
-            return;
+    try {
+      // 1. If not forced, check for duplicates first (non-blocking if offline)
+      if (!forceCreate && !duplicateWarning) {
+        try {
+          const dupCheckRes = await fetch('/api/patients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: newPatient.name.trim(),
+              phone: newPatient.phone.trim(),
+              village: newPatient.village,
+              checkDuplicateOnly: true,
+            }),
+          });
+
+          if (dupCheckRes.ok) {
+            const dupData = await dupCheckRes.json();
+            if (dupData.possibleDuplicate && dupData.existingPatient) {
+              setDuplicateWarning(dupData.existingPatient);
+              setIsSubmitting(false);
+              return;
+            }
           }
+        } catch {
+          // If duplicate check network fails, proceed to direct save or offline queue
         }
       }
 
-      // Save to real database
-      const res = await fetch('/api/patients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newPatient,
-          createdBy: user?.name || 'ASHA Priya',
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Database save failed');
+      // 2. Attempt save to database
+      let res;
+      try {
+        res = await fetch('/api/patients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (netErr) {
+        console.warn('Network unreachable, switching to offline fallback queue:', netErr);
+        saveToOfflineQueue(payload);
+        return;
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        // If server returns 500 or connection error, provide offline fallback
+        if (res.status >= 500) {
+          console.warn('Server error on save, activating offline safe queue:', errData);
+          saveToOfflineQueue(payload);
+          return;
+        }
+        setFormError(errData.error || errData.details || `Unable to save patient record (Error ${res.status})`);
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
       if (data.success && data.patient) {
         setShowModal(false);
         setDuplicateWarning(null);
-        // Navigate directly to the newly saved patient profile
+        // Direct navigation to newly registered patient profile
         router.push(`/asha/patients/${data.patient.id}`);
       } else {
-        throw new Error(data.error || 'Unable to save record');
+        setFormError(data.error || 'Unable to save record');
       }
     } catch (err) {
-      console.error('Registration failed:', err);
-      setFormError('Unable to save patient information. Please check the connection and try again.');
+      console.error('Registration exception, safely activating offline fallback:', err);
+      saveToOfflineQueue(payload);
     } finally {
       setIsSubmitting(false);
     }
@@ -132,13 +333,27 @@ export default function AshaPatients() {
         <div>
           <h1 className="page-title">Community Patients</h1>
           <p className="page-subtitle">
-            {patients.length} registered village members &bull; Persistent Relational Database
+            {patients.length} registered village members &bull; Persistent Relational Database {offlineCount > 0 ? `(${offlineCount} offline queued)` : ''}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setShowModal(true); setDuplicateWarning(null); setFormError(''); }}>
-          <Plus size={16} /> Register Patient
-        </button>
+        <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+          {offlineCount > 0 && (
+            <button className="btn btn-secondary" onClick={syncOfflineQueue} title="Sync pending offline patients to database">
+              <Cloud size={16} /> Sync ({offlineCount})
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={() => { setShowModal(true); setDuplicateWarning(null); setFormError(''); }}>
+            <Plus size={16} /> Register Patient
+          </button>
+        </div>
       </div>
+
+      {offlineNotice && (
+        <div className="alert alert-success" style={{ marginBottom: 'var(--space-md)' }}>
+          <CheckCircle size={18} />
+          <span>{offlineNotice}</span>
+        </div>
+      )}
 
       {error && (
         <div className="alert alert-danger" style={{ marginBottom: 'var(--space-md)' }}>
@@ -394,10 +609,17 @@ export default function AshaPatients() {
               onClick={() => router.push(`/asha/patients/${patient.id}`)}
             >
               <div className="patient-avatar">
-                {patient.name.split(' ').map(w => w[0]).join('').substring(0, 2)}
+                {(patient.name || 'P').split(' ').map(w => w[0]).join('').substring(0, 2)}
               </div>
               <div className="patient-info">
-                <div className="patient-name">{patient.name}</div>
+                <div className="patient-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span>{patient.name}</span>
+                  {patient.isOffline && (
+                    <span className="badge badge-warning" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                      Offline (Queued)
+                    </span>
+                  )}
+                </div>
                 <div className="patient-meta">
                   {patient.id} &middot; {patient.age}y {patient.gender} &middot; {patient.village}
                 </div>

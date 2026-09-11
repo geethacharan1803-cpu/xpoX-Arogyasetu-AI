@@ -10,3 +10,8 @@ next-env.d.ts
 public/sw.js
 public/workbox-*.js
 public/swe-worker-*.js
+
+# SQLite temp journal files
+*.db-wal
+*.db-shm
+
