@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    const { prompt, context } = await request.json();
+    const { prompt, context, imageBase64, imageMimeType } = await request.json();
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
+    const hasImage = imageBase64 && imageMimeType;
 
     const getDemoResponse = (query, ctx) => {
       const q = (query + ' ' + (ctx || '')).toLowerCase();
@@ -33,8 +34,13 @@ export async function POST(request) {
     };
 
     if (!apiKey || apiKey === 'demo') {
+      // Demo mode — return canned response; never fabricate image analysis
+      const demoResponse = hasImage
+        ? 'Image noted in demo mode. Configure GEMINI_API_KEY for real image-assisted triage. ' + getDemoResponse(prompt, context)
+        : getDemoResponse(prompt, context);
+
       return NextResponse.json({
-        response: getDemoResponse(prompt, context),
+        response: demoResponse,
         mode: 'demo',
         disclaimer: 'This AI assistant does not provide medical diagnoses or prescriptions. Always consult a qualified healthcare professional.',
       });
@@ -49,7 +55,22 @@ CRITICAL RULES:
 - If you lack reliable information, say: "Insufficient verified information. Please consult a healthcare professional."
 - Always recommend consulting a healthcare professional for medical decisions.
 - You may translate, explain, and simplify approved medical instructions.
-- Provide general health education based on trusted public health guidelines.`;
+- Provide general health education based on trusted public health guidelines.
+- When an image is provided, describe only visible observations (e.g., redness, swelling, rash location). Do NOT attempt to diagnose. Provide structured observation and triage urgency only.`;
+
+      // Build content parts — text first, then optional image
+      const parts = [
+        { text: context ? `Context: ${context}\n\nQuestion: ${prompt}` : prompt }
+      ];
+
+      if (hasImage) {
+        parts.push({
+          inline_data: {
+            mime_type: imageMimeType,
+            data: imageBase64,
+          }
+        });
+      }
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -58,9 +79,7 @@ CRITICAL RULES:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{
-              parts: [{ text: context ? `Context: ${context}\n\nQuestion: ${prompt}` : prompt }]
-            }],
+            contents: [{ parts }],
             generationConfig: { temperature: 0.3, maxOutputTokens: 1000 },
           }),
         }
@@ -72,6 +91,7 @@ CRITICAL RULES:
         return NextResponse.json({
           response: aiResponse,
           mode: 'ai',
+          imageAnalyzed: hasImage,
           disclaimer: 'This AI assistant does not provide medical diagnoses or prescriptions. Always consult a qualified healthcare professional.',
         });
       }

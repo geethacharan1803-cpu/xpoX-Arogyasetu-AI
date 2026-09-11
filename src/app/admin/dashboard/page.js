@@ -2,7 +2,8 @@
 
 import { DEMO_PATIENTS, DEMO_REFERRALS, DEMO_HEALTH_TICKETS, DEMO_FOLLOWUPS, DEMO_FACILITIES } from '@/lib/demo-data';
 import { useAuth } from '@/lib/auth-context';
-import { Building2, Users, ArrowRightLeft, BarChart3, FileText, Heart } from 'lucide-react';
+import { Building2, Users, ArrowRightLeft, BarChart3, FileText, Heart, AlertTriangle } from 'lucide-react';
+import { detectClusters } from '@/lib/outbreak-detection';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -67,6 +68,39 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Possible Outbreak Alerts — Feature 2 */}
+      {(() => {
+        const clusters = detectClusters(DEMO_HEALTH_TICKETS, DEMO_PATIENTS);
+        return (
+          <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
+            <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+              <AlertTriangle size={18} style={{ color: 'var(--color-warning)' }} />
+              <h3 className="card-title" style={{ marginBottom: 0 }}>Possible Outbreak Alerts</h3>
+            </div>
+            {clusters.length === 0 ? (
+              <div style={{ padding: 'var(--space-md)', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                <p className="text-sm text-secondary">No clusters detected — fewer than 3 patients with similar symptoms in the same village within the last 7 days.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                {clusters.map((cluster, idx) => (
+                  <div key={idx} style={{ padding: 'var(--space-md)', background: 'var(--color-warning-light)', borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--color-warning)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                      <span className="badge badge-warning">⚠ Cluster</span>
+                      <span className="font-bold text-sm">{cluster.symptom.charAt(0).toUpperCase() + cluster.symptom.slice(1)}</span>
+                      <span className="text-sm text-secondary">in {cluster.village}</span>
+                    </div>
+                    <div style={{ marginTop: 'var(--space-xs)' }}>
+                      <span className="text-sm">{cluster.patientCount} patients affected — first reported {cluster.firstReported}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

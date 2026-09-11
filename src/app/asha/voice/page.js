@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mic, MicOff, Globe, Volume2, Loader } from 'lucide-react';
+import { Mic, MicOff, Globe, Volume2, Loader, Camera, X } from 'lucide-react';
 
 const LANGUAGES = [
   { code: 'te-IN', label: 'Telugu', name: 'Telugu' },
@@ -22,6 +22,9 @@ export default function AshaVoice() {
   const [error, setError] = useState('');
   const [urgency, setUrgency] = useState('routine');
   const recognitionRef = useRef(null);
+  const [attachedImage, setAttachedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const fileInputRef = useRef(null);
 
   const DEMO_PROMPTS = {
     'te-IN': [
@@ -35,6 +38,24 @@ export default function AshaVoice() {
     'en-IN': [
       { label: 'Persistent Cough', text: 'I have had a dry cough for the last two weeks with mild evening fever.' },
     ],
+  };
+
+  const handleImageAttach = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      setAttachedImage({ base64, mimeType: file.type, name: file.name });
+      setImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachedImage = () => {
+    setAttachedImage(null);
+    setImagePreview('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const processVoiceIntake = async (text, lang) => {
@@ -60,6 +81,36 @@ export default function AshaVoice() {
         detectedUrgency = 'urgent';
       }
       setUrgency(detectedUrgency);
+
+      // 2b. If image is attached, also get AI assessment with image
+      if (attachedImage) {
+        try {
+          const aiRes = await fetch('/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: `Voice intake transcript: ${englishText}. An image has been attached for visual assessment.`,
+              context: `Patient symptoms described via voice in ${lang}. Original: ${text}`,
+              imageBase64: attachedImage.base64,
+              imageMimeType: attachedImage.mimeType,
+            }),
+          });
+          const aiData = await aiRes.json();
+          if (aiData.response) {
+            // Combine image assessment with vernacular guidance
+            const imageNote = `\n\n📷 Image Assessment: ${aiData.response}`;
+            // Set urgency from combined assessment
+            if (aiData.response.toLowerCase().includes('emergency') || aiData.response.toLowerCase().includes('critical')) {
+              detectedUrgency = 'emergency';
+              setUrgency('emergency');
+            }
+            setAiGuidance((prev) => prev + imageNote);
+            return; // skip the default vernacular advice below since we have AI response
+          }
+        } catch (imgErr) {
+          // Fall through to standard vernacular guidance
+        }
+      }
 
       // 3. Generate safe vernacular guidance
       let vernacularAdvice = '';
@@ -245,6 +296,51 @@ export default function AshaVoice() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Attach Photo — Feature 1: Multimodal Triage */}
+      <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
+        <div className="card-header" style={{ marginBottom: 'var(--space-sm)' }}>
+          <h3 className="card-title">
+            <Camera size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+            Attach Photo (Optional)
+          </h3>
+          <p className="text-xs text-muted">Attach a photo of wound, rash, swelling, or printed prescription for AI-assisted visual triage</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
+          <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Camera size={16} />
+            {attachedImage ? 'Change Photo' : 'Select Photo'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleImageAttach}
+              style={{ display: 'none' }}
+            />
+          </label>
+          {attachedImage && (
+            <button className="btn btn-sm btn-secondary" onClick={removeAttachedImage} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <X size={14} /> Remove
+            </button>
+          )}
+        </div>
+        {imagePreview && (
+          <div style={{ marginTop: 'var(--space-md)', display: 'flex', alignItems: 'flex-start', gap: 'var(--space-md)' }}>
+            <img
+              src={imagePreview}
+              alt="Attached photo preview"
+              style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '2px solid var(--color-border)' }}
+            />
+            <div>
+              <span className="badge badge-info">📷 Photo Attached</span>
+              <p className="text-xs text-muted" style={{ marginTop: 'var(--space-xs)' }}>
+                {attachedImage.name} — will be included with next voice intake submission
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pipeline Results */}

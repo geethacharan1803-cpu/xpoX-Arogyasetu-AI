@@ -4,6 +4,7 @@ import Providers from './providers';
 export const metadata = {
   title: 'ArogyaSetu AI - Rural Healthcare Platform',
   description: 'AI-powered, multilingual, offline-first rural healthcare communication and care-continuity platform connecting patients, ASHA workers, healthcare workers and PHC doctors.',
+  manifest: '/manifest.json',
 };
 
 export default function RootLayout({ children }) {
