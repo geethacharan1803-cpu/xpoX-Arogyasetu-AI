@@ -22,9 +22,11 @@ export default function AshaVoice() {
   const [error, setError] = useState('');
   const [urgency, setUrgency] = useState('routine');
   const recognitionRef = useRef(null);
+  const currentTranscriptRef = useRef('');
   const [attachedImage, setAttachedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const fileInputRef = useRef(null);
+  const [manualInput, setManualInput] = useState('');
 
   const DEMO_PROMPTS = {
     'te-IN': [
@@ -59,6 +61,7 @@ export default function AshaVoice() {
   };
 
   const processVoiceIntake = async (text, lang) => {
+    if (!text || !text.trim()) return;
     setProcessing(true);
     setAiGuidance('');
     try {
@@ -82,36 +85,6 @@ export default function AshaVoice() {
       }
       setUrgency(detectedUrgency);
 
-      // 2b. If image is attached, also get AI assessment with image
-      if (attachedImage) {
-        try {
-          const aiRes = await fetch('/api/ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: `Voice intake transcript: ${englishText}. An image has been attached for visual assessment.`,
-              context: `Patient symptoms described via voice in ${lang}. Original: ${text}`,
-              imageBase64: attachedImage.base64,
-              imageMimeType: attachedImage.mimeType,
-            }),
-          });
-          const aiData = await aiRes.json();
-          if (aiData.response) {
-            // Combine image assessment with vernacular guidance
-            const imageNote = `\n\n📷 Image Assessment: ${aiData.response}`;
-            // Set urgency from combined assessment
-            if (aiData.response.toLowerCase().includes('emergency') || aiData.response.toLowerCase().includes('critical')) {
-              detectedUrgency = 'emergency';
-              setUrgency('emergency');
-            }
-            setAiGuidance((prev) => prev + imageNote);
-            return; // skip the default vernacular advice below since we have AI response
-          }
-        } catch (imgErr) {
-          // Fall through to standard vernacular guidance
-        }
-      }
-
       // 3. Generate safe vernacular guidance
       let vernacularAdvice = '';
       if (lang === 'te-IN') {
@@ -127,8 +100,26 @@ export default function AshaVoice() {
           ? 'EMERGENCY ALERT: Immediate clinical referral to nearest PHC/Hospital is recommended. Do not administer unverified medication.'
           : 'Protocol Guidance: Encourage patient hydration and rest. Create a Health Ticket for PHC Medical Officer assessment.';
       }
+
       setAiGuidance(vernacularAdvice);
+
+      // 4. Save voice record permanently to the real database
+      const langInfo = LANGUAGES.find(l => l.code === lang);
+      await fetch('/api/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: text,
+          detectedLanguage: langInfo?.name || lang,
+          translatedText: englishText,
+          aiSummary: vernacularAdvice,
+          urgency: detectedUrgency,
+          createdBy: 'ASHA Worker',
+        }),
+      });
+
     } catch (e) {
+      console.error('Error processing voice intake:', e);
       setTranslation(text);
       setAiGuidance('Guidance: Please record vitals and consult the PHC Medical Officer.');
     } finally {
@@ -138,9 +129,21 @@ export default function AshaVoice() {
 
   const handleSelectDemoPrompt = (promptText) => {
     setTranscript(promptText);
+    currentTranscriptRef.current = promptText;
     const langInfo = LANGUAGES.find(l => l.code === selectedLang);
     setDetectedLang(langInfo?.name || selectedLang);
     processVoiceIntake(promptText, selectedLang);
+  };
+
+  const handleManualSubmit = (e) => {
+    e.preventDefault();
+    if (!manualInput.trim()) return;
+    setTranscript(manualInput.trim());
+    currentTranscriptRef.current = manualInput.trim();
+    const langInfo = LANGUAGES.find(l => l.code === selectedLang);
+    setDetectedLang(langInfo?.name || selectedLang);
+    processVoiceIntake(manualInput.trim(), selectedLang);
+    setManualInput('');
   };
 
   const startRecording = () => {
@@ -149,9 +152,10 @@ export default function AshaVoice() {
     setTranslation('');
     setAiGuidance('');
     setDetectedLang('');
+    currentTranscriptRef.current = '';
 
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      setError('Voice recognition is not supported in this browser. Please use Chrome/Edge or select one of the quick test prompts below.');
+    if (typeof window === 'undefined' || (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window))) {
+      setError('Browser speech recognition is not supported in this environment. Please type in the box below or test with the quick samples.');
       return;
     }
 
@@ -159,7 +163,7 @@ export default function AshaVoice() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       recognition.lang = selectedLang;
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
@@ -168,20 +172,22 @@ export default function AshaVoice() {
         for (let i = 0; i < event.results.length; i++) {
           text += event.results[i][0].transcript;
         }
-        setTranscript(text);
-        const langInfo = LANGUAGES.find(l => l.code === selectedLang);
-        setDetectedLang(langInfo?.name || selectedLang);
-
-        if (event.results[0]?.isFinal) {
-          setIsRecording(false);
-          processVoiceIntake(text, selectedLang);
+        if (text.trim()) {
+          setTranscript(text);
+          currentTranscriptRef.current = text;
+          const langInfo = LANGUAGES.find(l => l.code === selectedLang);
+          setDetectedLang(langInfo?.name || selectedLang);
         }
       };
 
       recognition.onerror = (event) => {
         setIsRecording(false);
         if (event.error === 'no-speech') {
-          setError('No speech detected. Please try speaking into the microphone or use the quick test prompts below.');
+          if (currentTranscriptRef.current) {
+            processVoiceIntake(currentTranscriptRef.current, selectedLang);
+          } else {
+            setError('No speech detected. Please speak into the microphone or use the quick test samples below.');
+          }
         } else if (event.error === 'not-allowed') {
           setError('Microphone access blocked. Enable permissions or test with the quick voice samples below.');
         } else {
@@ -191,13 +197,16 @@ export default function AshaVoice() {
 
       recognition.onend = () => {
         setIsRecording(false);
+        if (currentTranscriptRef.current) {
+          processVoiceIntake(currentTranscriptRef.current, selectedLang);
+        }
       };
 
       recognitionRef.current = recognition;
       recognition.start();
       setIsRecording(true);
     } catch (err) {
-      setError('Voice recognition initialization error. Please select a sample prompt below.');
+      setError('Voice recognition error. Please select a sample prompt or type below.');
       setIsRecording(false);
     }
   };
@@ -207,10 +216,13 @@ export default function AshaVoice() {
       recognitionRef.current.stop();
     }
     setIsRecording(false);
+    if (currentTranscriptRef.current) {
+      processVoiceIntake(currentTranscriptRef.current, selectedLang);
+    }
   };
 
   const speak = (text, lang) => {
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = lang || selectedLang;
@@ -295,6 +307,22 @@ export default function AshaVoice() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Direct Text Intake Option */}
+        <div style={{ marginTop: 'var(--space-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)', textAlign: 'left' }}>
+          <form onSubmit={handleManualSubmit} style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Or type/paste patient statement directly..."
+              value={manualInput}
+              onChange={(e) => setManualInput(e.target.value)}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+              Process Intake
+            </button>
+          </form>
         </div>
       </div>
 

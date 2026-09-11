@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { DEMO_HEALTH_TICKETS } from '@/lib/demo-data';
-import { FileText, ChevronRight, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { FileText, ChevronRight, Plus, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/auth-context';
 
 const STATUS_MAP = {
   'registered': { label: 'Registered', badge: 'badge-neutral' },
@@ -17,11 +17,17 @@ const STATUS_MAP = {
 
 export default function AshaTickets() {
   const router = useRouter();
+  const { user } = useAuth();
   const [filter, setFilter] = useState('all');
-  const [tickets, setTickets] = useState(DEMO_HEALTH_TICKETS);
+  const [tickets, setTickets] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+
   const [newTicket, setNewTicket] = useState({
-    patientId: 'P-2026-001',
+    patientId: '',
     concern: '',
     symptoms: '',
     priority: 'high',
@@ -32,63 +38,79 @@ export default function AshaTickets() {
     sugar: '',
   });
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [tksRes, ptsRes] = await Promise.all([
+        fetch('/api/tickets'),
+        fetch('/api/patients')
+      ]);
+      if (tksRes.ok) {
+        const d = await tksRes.json();
+        setTickets(d.tickets || []);
+      }
+      if (ptsRes.ok) {
+        const pData = await ptsRes.json();
+        setPatients(pData.patients || []);
+        if (pData.patients && pData.patients.length > 0 && !newTicket.patientId) {
+          setNewTicket(prev => ({ ...prev, patientId: pData.patients[0].id }));
+        }
+      }
+    } catch (err) {
+      console.error('Error loading tickets/patients:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [newTicket.patientId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   const filtered = filter === 'all'
     ? tickets
     : tickets.filter(t => t.priority === filter);
 
-  const handleCreateTicket = (e) => {
+  const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!newTicket.concern.trim()) return;
+    setFormError('');
+    setIsSubmitting(true);
 
-    const patient = DEMO_PATIENTS.find(p => p.id === newTicket.patientId) || DEMO_PATIENTS[0];
-    const ticketId = `HT-2026-000${130 + tickets.length}`;
-    const todayStr = 'Today';
+    try {
+      const selectedPatient = patients.find(p => p.id === newTicket.patientId) || patients[0];
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newTicket,
+          patientId: selectedPatient?.id || 'P-2026-001',
+          patientName: selectedPatient?.name || 'Registered Patient',
+          createdBy: user?.name || 'ASHA Priya',
+        }),
+      });
 
-    const created = {
-      id: ticketId,
-      patientId: patient.id,
-      patientName: patient.name,
-      concern: newTicket.concern.trim(),
-      priority: newTicket.priority,
-      status: 'vitals-added',
-      createdDate: todayStr,
-      createdBy: 'ASHA Priya',
-      timeline: [
-        { step: 'Registered', date: todayStr, completed: true, note: 'Health ticket created by ASHA' },
-        { step: 'Symptoms Recorded', date: todayStr, completed: true, note: newTicket.symptoms || newTicket.concern },
-        { step: 'Vitals Added', date: todayStr, completed: true, note: `BP ${newTicket.bp}, Pulse ${newTicket.pulse}, SpO2 ${newTicket.spo2}%` },
-        { step: 'Referred', date: null, completed: false, note: '' },
-        { step: 'Doctor Reviewed', date: null, completed: false, note: '' },
-        { step: 'Prescription Added', date: null, completed: false, note: '' },
-        { step: 'Follow-up Scheduled', date: null, completed: false, note: '' },
-      ],
-      vitals: {
-        bp: newTicket.bp,
-        pulse: parseInt(newTicket.pulse) || 76,
-        temp: parseFloat(newTicket.temp) || 98.6,
-        weight: 60,
-        spo2: parseInt(newTicket.spo2) || 98,
-        sugar: newTicket.sugar ? parseInt(newTicket.sugar) : null,
-      },
-      symptoms: newTicket.symptoms || newTicket.concern,
-      transcript: null,
-      translatedTranscript: null,
-      detectedLanguage: 'English',
-    };
+      if (!res.ok) throw new Error('Failed to create health ticket');
 
-    setTickets([created, ...tickets]);
-    setShowModal(false);
-    setNewTicket({
-      patientId: 'P-2026-001',
-      concern: '',
-      symptoms: '',
-      priority: 'high',
-      bp: '120/80',
-      pulse: '76',
-      temp: '98.6',
-      spo2: '98',
-      sugar: '',
-    });
+      setShowModal(false);
+      setNewTicket({
+        patientId: patients[0]?.id || '',
+        concern: '',
+        symptoms: '',
+        priority: 'high',
+        bp: '120/80',
+        pulse: '76',
+        temp: '98.6',
+        spo2: '98',
+        sugar: '',
+      });
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setFormError('Unable to create health ticket. Please check your connection and retry.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -96,9 +118,9 @@ export default function AshaTickets() {
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
         <div>
           <h1 className="page-title">Health Tickets</h1>
-          <p className="page-subtitle">{tickets.length} total tickets</p>
+          <p className="page-subtitle">{tickets.length} total tickets in database</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => { setShowModal(true); setFormError(''); }}>
           <Plus size={16} /> New Ticket
         </button>
       </div>
@@ -116,6 +138,14 @@ export default function AshaTickets() {
         }}>
           <div className="card" style={{ maxWidth: 540, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Generate Health Ticket</h3>
+
+            {formError && (
+              <div className="alert alert-danger" style={{ marginBottom: 'var(--space-md)' }}>
+                <AlertTriangle size={18} />
+                <span>{formError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleCreateTicket}>
               <div className="form-group">
                 <label className="form-label">Select Patient</label>
@@ -123,9 +153,10 @@ export default function AshaTickets() {
                   className="form-input"
                   value={newTicket.patientId}
                   onChange={e => setNewTicket({ ...newTicket, patientId: e.target.value })}
+                  required
                 >
-                  {DEMO_PATIENTS.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.id}) - {p.village}</option>
+                  {patients.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.id}) &mdash; {p.village}</option>
                   ))}
                 </select>
               </div>
@@ -143,7 +174,7 @@ export default function AshaTickets() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Symptoms & Notes</label>
+                <label className="form-label">Symptoms &amp; Notes</label>
                 <textarea
                   className="form-input"
                   rows={2}
@@ -154,99 +185,146 @@ export default function AshaTickets() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Urgency Classification</label>
-                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                  {[
-                    { key: 'high', label: 'Urgent / Red Flag' },
-                    { key: 'medium', label: 'Moderate' },
-                    { key: 'routine', label: 'Routine' },
-                  ].map(p => (
-                    <button
-                      type="button"
-                      key={p.key}
-                      className={`btn btn-sm ${newTicket.priority === p.key ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setNewTicket({ ...newTicket, priority: p.key })}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+                <label className="form-label">Priority Level</label>
+                <select
+                  className="form-input"
+                  value={newTicket.priority}
+                  onChange={e => setNewTicket({ ...newTicket, priority: e.target.value })}
+                >
+                  <option value="high">High Priority &mdash; Needs Doctor Review</option>
+                  <option value="medium">Medium Priority &mdash; Routine Clinical Review</option>
+                  <option value="low">Low Priority &mdash; General Monitoring</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+                <div className="form-group">
+                  <label className="form-label">Blood Pressure</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="120/80"
+                    value={newTicket.bp}
+                    onChange={e => setNewTicket({ ...newTicket, bp: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Pulse (bpm)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder="76"
+                    value={newTicket.pulse}
+                    onChange={e => setNewTicket({ ...newTicket, pulse: e.target.value })}
+                  />
                 </div>
               </div>
 
-              <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)' }}>
-                <h4 className="font-semibold text-sm" style={{ marginBottom: 'var(--space-sm)' }}>Vitals Screening</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
-                  <div>
-                    <label className="text-xs text-muted">Blood Pressure (mmHg)</label>
-                    <input className="form-input" placeholder="120/80" value={newTicket.bp} onChange={e => setNewTicket({ ...newTicket, bp: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted">Pulse (bpm)</label>
-                    <input className="form-input" placeholder="76" value={newTicket.pulse} onChange={e => setNewTicket({ ...newTicket, pulse: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted">Temperature (°F)</label>
-                    <input className="form-input" placeholder="98.6" value={newTicket.temp} onChange={e => setNewTicket({ ...newTicket, temp: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted">SpO2 (%)</label>
-                    <input className="form-input" placeholder="98" value={newTicket.spo2} onChange={e => setNewTicket({ ...newTicket, spo2: e.target.value })} />
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-sm)' }}>
+                <div className="form-group">
+                  <label className="form-label">Temp (°F)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="form-input"
+                    value={newTicket.temp}
+                    onChange={e => setNewTicket({ ...newTicket, temp: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">SpO2 (%)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={newTicket.spo2}
+                    onChange={e => setNewTicket({ ...newTicket, spo2: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Sugar (mg/dL)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder="Optional"
+                    value={newTicket.sugar}
+                    onChange={e => setNewTicket({ ...newTicket, sugar: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Create Health Ticket</button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowModal(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Saving to Database...' : 'Create Ticket'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filter tabs */}
       <div className="tabs">
-        {[
-          { key: 'all', label: 'All' },
-          { key: 'high', label: 'High Priority' },
-          { key: 'medium', label: 'Medium' },
-        ].map(f => (
-          <button key={f.key} className={`tab ${filter === f.key ? 'active' : ''}`} onClick={() => setFilter(f.key)}>
-            {f.label}
-          </button>
-        ))}
+        <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+          All Tickets ({tickets.length})
+        </button>
+        <button className={`tab ${filter === 'high' ? 'active' : ''}`} onClick={() => setFilter('high')}>
+          High Priority ({tickets.filter(t => t.priority === 'high').length})
+        </button>
+        <button className={`tab ${filter === 'medium' ? 'active' : ''}`} onClick={() => setFilter('medium')}>
+          Medium Priority ({tickets.filter(t => t.priority === 'medium').length})
+        </button>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="loading-container" style={{ padding: 'var(--space-2xl)' }}>
+          <div className="spinner" />
+          <span>Loading health tickets from database...</span>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon"><FileText /></div>
-            <p className="empty-state-title">No health tickets found</p>
-            <p className="empty-state-text">No tickets match the selected filter.</p>
+            <FileText size={32} style={{ color: 'var(--color-text-muted)', margin: '0 auto var(--space-sm)' }} />
+            <p className="empty-state-title">No tickets found</p>
+            <p className="empty-state-text">No tickets matching the current filter.</p>
           </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-          {filtered.map(ticket => {
-            const status = STATUS_MAP[ticket.status] || { label: ticket.status, badge: 'badge-neutral' };
-            return (
-              <div key={ticket.id} className="card" style={{ padding: 'var(--space-md)', cursor: 'pointer' }} onClick={() => router.push(`/asha/tickets/${ticket.id}`)}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 4 }}>
-                      <span className="font-bold text-sm" style={{ color: 'var(--color-primary-700)' }}>{ticket.id}</span>
-                      <span className={`badge ${ticket.priority === 'high' ? 'badge-danger' : 'badge-warning'}`}>{ticket.priority}</span>
-                      <span className={`badge ${status.badge}`}>{status.label}</span>
-                    </div>
-                    <div className="font-semibold" style={{ marginBottom: 2 }}>{ticket.patientName}</div>
-                    <div className="text-sm text-secondary">{ticket.concern}</div>
-                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>Created {ticket.createdDate} by {ticket.createdBy}</div>
+          {filtered.map(t => (
+            <div key={t.id} className="card" style={{ padding: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                    <span className="font-semibold text-sm">{t.id}</span>
+                    <span className={`badge ${t.priority === 'high' ? 'badge-danger' : 'badge-primary'}`}>{t.priority}</span>
+                    <span className={`badge ${STATUS_MAP[t.status]?.badge || 'badge-neutral'}`}>{STATUS_MAP[t.status]?.label || t.status}</span>
                   </div>
-                  <ChevronRight size={18} style={{ color: 'var(--color-text-muted)', marginTop: 4 }} />
+                  <h3 style={{ fontSize: 'var(--font-size-base)', fontWeight: 600, marginTop: 'var(--space-xs)', marginBottom: 2 }}>{t.concern}</h3>
+                  <p className="text-xs text-muted">
+                    Patient: <strong>{t.patientName}</strong> ({t.patientId}) &bull; Created: {t.createdDate} by {t.createdBy}
+                  </p>
                 </div>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => router.push(`/asha/patients/${t.patientId}`)}
+                >
+                  View Patient <ChevronRight size={14} />
+                </button>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

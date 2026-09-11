@@ -1,34 +1,71 @@
 'use client';
 
-import { DEMO_REFERRALS, getPatientById } from '@/lib/demo-data';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { ArrowRightLeft, User, FileText, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowRightLeft, User, FileText, CheckCircle, ChevronRight } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
+
+const STATUS_LABELS = {
+  'pending': { label: 'Pending', badge: 'badge-warning' },
+  'accepted': { label: 'Accepted', badge: 'badge-info' },
+  'in-review': { label: 'In Review', badge: 'badge-primary' },
+  'completed': { label: 'Completed', badge: 'badge-success' },
+};
 
 export default function DoctorReferrals() {
   const router = useRouter();
-  const [referrals, setReferrals] = useState(DEMO_REFERRALS);
+  const { user } = useAuth();
+  const [referrals, setReferrals] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [acceptedNotice, setAcceptedNotice] = useState('');
 
-  const handleAccept = (refId) => {
-    setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'accepted' } : r));
-    setAcceptedNotice(`Referral ${refId} has been accepted. Clinical review in progress.`);
-    setTimeout(() => setAcceptedNotice(''), 4000);
-  };
+  const loadReferrals = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/referrals');
+      if (res.ok) {
+        const d = await res.json();
+        setReferrals(d.referrals || []);
+      }
+    } catch (err) {
+      console.error('Error fetching doctor referrals:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const STATUS_LABELS = {
-    'pending': { label: 'Pending', badge: 'badge-warning' },
-    'accepted': { label: 'Accepted', badge: 'badge-info' },
-    'in-review': { label: 'In Review', badge: 'badge-primary' },
-    'completed': { label: 'Completed', badge: 'badge-success' },
+  useEffect(() => {
+    loadReferrals();
+  }, [loadReferrals]);
+
+  const handleUpdateStatus = async (refId, newStatus) => {
+    try {
+      const res = await fetch('/api/referrals', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: refId,
+          status: newStatus,
+          updatedBy: user?.name || 'Dr. Sharma',
+        }),
+      });
+
+      if (res.ok) {
+        setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: newStatus } : r));
+        setAcceptedNotice(`Referral ${refId} status updated to ${newStatus.toUpperCase()}.`);
+        setTimeout(() => setAcceptedNotice(''), 4000);
+      }
+    } catch (err) {
+      console.error('Failed to update referral:', err);
+    }
   };
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Referrals</h1>
-        <p className="page-subtitle">Review and manage patient referrals</p>
+        <h1 className="page-title">Referrals Review Desk</h1>
+        <p className="page-subtitle">Review and manage clinical patient referrals from database</p>
       </div>
 
       {acceptedNotice && (
@@ -38,64 +75,75 @@ export default function DoctorReferrals() {
         </div>
       )}
 
-      {referrals.length === 0 ? (
-        <div className="card"><div className="empty-state"><p className="empty-state-title">No referrals</p></div></div>
+      {loading ? (
+        <div className="loading-container" style={{ padding: 'var(--space-2xl)' }}>
+          <div className="spinner" />
+          <span>Loading referrals from database...</span>
+        </div>
+      ) : referrals.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <p className="empty-state-title">No referrals</p>
+            <p className="empty-state-text">No active clinical referrals in the system.</p>
+          </div>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
           {referrals.map(ref => {
-            const patient = getPatientById(ref.patientId);
             const status = STATUS_LABELS[ref.status] || { label: ref.status, badge: 'badge-neutral' };
             const isExpanded = expandedId === ref.id;
 
             return (
               <div key={ref.id} className="card" style={{ padding: 'var(--space-md)' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-sm)', flexWrap: 'wrap', cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : ref.id)}>
+                <div
+                  style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-sm)', flexWrap: 'wrap', cursor: 'pointer' }}
+                  onClick={() => setExpandedId(isExpanded ? null : ref.id)}
+                >
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap', marginBottom: 4 }}>
                       <span className="font-bold text-sm">{ref.id}</span>
                       <span className={`badge ${ref.priority === 'high' ? 'badge-danger' : 'badge-warning'}`}>{ref.priority}</span>
                       <span className={`badge ${status.badge}`}>{status.label}</span>
                     </div>
-                    <div className="font-semibold">{ref.patientName}</div>
+                    <div className="font-semibold">{ref.patientName} ({ref.patientId})</div>
                     <div className="text-sm text-secondary">{ref.reason}</div>
-                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>From: {ref.createdBy} | {ref.createdDate}</div>
+                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>
+                      Referred by: {ref.createdBy} &bull; Destination: {ref.destination} &bull; Date: {ref.createdDate}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/doctor/patients/${ref.patientId}`);
+                      }}
+                    >
+                      View Dossier <ChevronRight size={14} />
+                    </button>
                   </div>
                 </div>
 
-                {isExpanded && patient && (
-                  <div style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)' }}>
-                    <h4 className="font-semibold text-sm" style={{ marginBottom: 'var(--space-sm)' }}>Patient Details</h4>
-                    <div className="info-grid">
-                      <span className="info-label">Name</span><span className="info-value">{patient.name}</span>
-                      <span className="info-label">Age / Gender</span><span className="info-value">{patient.age}y {patient.gender}</span>
-                      <span className="info-label">Conditions</span><span className="info-value">{patient.conditions.join(', ')}</span>
-                      <span className="info-label">Allergies</span><span className="info-value">{patient.allergies.join(', ')}</span>
-                      <span className="info-label">Village</span><span className="info-value">{patient.village}</span>
-                    </div>
-
-                    {patient.vitals[0] && (
-                      <div style={{ marginTop: 'var(--space-md)' }}>
-                        <h4 className="font-semibold text-sm" style={{ marginBottom: 'var(--space-sm)' }}>Latest Vitals</h4>
-                        <div className="info-grid">
-                          <span className="info-label">BP</span><span className="info-value">{patient.vitals[0].bp}</span>
-                          <span className="info-label">Pulse</span><span className="info-value">{patient.vitals[0].pulse} bpm</span>
-                          <span className="info-label">SpO2</span><span className="info-value">{patient.vitals[0].spo2}%</span>
-                        </div>
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)', flexWrap: 'wrap' }}>
+                {isExpanded && (
+                  <div style={{ marginTop: 'var(--space-md)', paddingTop: 'var(--space-md)', borderTop: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
                       {ref.status !== 'accepted' && (
-                        <button className="btn btn-primary btn-sm" onClick={() => handleAccept(ref.id)}>
-                          <CheckCircle size={14} /> Accept Referral
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={() => handleUpdateStatus(ref.id, 'accepted')}
+                        >
+                          Accept Referral
                         </button>
                       )}
-                      <button className="btn btn-secondary btn-sm" onClick={() => router.push(`/doctor/patients`)}>
-                        <User size={14} /> Full Profile
-                      </button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => router.push('/doctor/prescriptions')}>
-                        <FileText size={14} /> Add Prescription
-                      </button>
+                      {ref.status !== 'completed' && (
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => handleUpdateStatus(ref.id, 'completed')}
+                        >
+                          Mark Completed
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

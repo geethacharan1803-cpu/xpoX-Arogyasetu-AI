@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { DEMO_REFERRALS, DEMO_FACILITIES } from '@/lib/demo-data';
-import { ArrowRightLeft, Building2, User, Clock, AlertTriangle, CheckCircle, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { DEMO_FACILITIES } from '@/lib/demo-data';
+import { ArrowRightLeft, Building2, User, Clock, AlertTriangle, CheckCircle, Search, RefreshCw } from 'lucide-react';
 
 const STATUS_CONFIG = {
   'pending': { label: 'Pending Review', badge: 'badge-warning' },
@@ -13,17 +13,50 @@ const STATUS_CONFIG = {
 };
 
 export default function AdminReferrals() {
+  const [referrals, setReferrals] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [facilityFilter, setFacilityFilter] = useState('all');
   const [search, setSearch] = useState('');
 
-  const total = DEMO_REFERRALS.length;
-  const pending = DEMO_REFERRALS.filter(r => r.status === 'pending').length;
-  const inReview = DEMO_REFERRALS.filter(r => r.status === 'in-review').length;
-  const accepted = DEMO_REFERRALS.filter(r => r.status === 'accepted').length;
-  const completed = DEMO_REFERRALS.filter(r => r.status === 'completed').length;
+  const fetchReferrals = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/referrals');
+      if (res.ok) {
+        const data = await res.json();
+        const mapped = (data.referrals || []).map(r => ({
+          id: r.id,
+          patientId: r.patient_id || r.patientId,
+          patientName: r.patient_name || r.patientName || 'Unknown Patient',
+          ticketId: r.ticket_id || r.ticketId,
+          destination: r.destination || r.destination_facility || 'PHC',
+          reason: r.reason,
+          priority: r.priority || 'medium',
+          status: r.status || 'pending',
+          createdBy: r.created_by || r.createdBy || 'ASHA Worker',
+          createdDate: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : 'Today',
+        }));
+        setReferrals(mapped);
+      }
+    } catch (err) {
+      console.error('Failed to load referrals:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filtered = DEMO_REFERRALS.filter(r => {
+  useEffect(() => {
+    fetchReferrals();
+  }, []);
+
+  const total = referrals.length;
+  const pending = referrals.filter(r => r.status === 'pending').length;
+  const inReview = referrals.filter(r => r.status === 'in-review').length;
+  const accepted = referrals.filter(r => r.status === 'accepted').length;
+  const completed = referrals.filter(r => r.status === 'completed').length;
+
+  const filtered = referrals.filter(r => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (facilityFilter !== 'all' && r.destination !== facilityFilter) return false;
     if (search.trim()) {
@@ -33,11 +66,12 @@ export default function AdminReferrals() {
         r.id.toLowerCase().includes(q) ||
         r.destination.toLowerCase().includes(q) ||
         r.createdBy.toLowerCase().includes(q) ||
-        r.reason.toLowerCase().includes(q)
+        (r.reason && r.reason.toLowerCase().includes(q))
       );
     }
     return true;
   });
+
 
   return (
     <div>

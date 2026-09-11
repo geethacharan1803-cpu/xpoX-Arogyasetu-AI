@@ -1,15 +1,22 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { searchPatients, DEMO_PATIENTS } from '@/lib/demo-data';
-import { Search, Plus, ChevronRight } from 'lucide-react';
+import { Search, Plus, ChevronRight, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
 
 export default function AshaPatients() {
   const router = useRouter();
-  const [patients, setPatients] = useState(DEMO_PATIENTS);
+  const { user } = useAuth();
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
+
   const [newPatient, setNewPatient] = useState({
     name: '',
     age: '',
@@ -21,65 +28,102 @@ export default function AshaPatients() {
     pregnancyWeek: '',
     conditions: '',
     allergies: 'None known',
+    bp: '120/80',
+    pulse: '76',
+    temp: '98.6',
+    weight: '60',
+    spo2: '98',
   });
 
-  const results = useMemo(() => {
-    if (!query.trim()) return patients;
-    const q = query.toLowerCase();
-    return patients.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.id.toLowerCase().includes(q) ||
-      p.village.toLowerCase().includes(q) ||
-      p.phone.includes(q)
-    );
-  }, [query, patients]);
+  const fetchPatients = useCallback(async (searchQuery = '') => {
+    setLoading(true);
+    setError('');
+    try {
+      const url = searchQuery.trim()
+        ? `/api/patients?q=${encodeURIComponent(searchQuery.trim())}`
+        : '/api/patients';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Database query returned an error');
+      const data = await res.json();
+      setPatients(data.patients || []);
+    } catch (err) {
+      console.error('Failed to load patients:', err);
+      setError('Unable to load patient records from database. Please check connection and retry.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const handleRegister = (e) => {
-    e.preventDefault();
-    if (!newPatient.name.trim()) return;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchPatients(query);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, fetchPatients]);
 
-    const patientId = `P-2026-${String(patients.length + 1).padStart(3, '0')}`;
-    const todayStr = new Date().toISOString().split('T')[0];
+  const handleRegister = async (e, forceCreate = false) => {
+    if (e) e.preventDefault();
+    if (!newPatient.name.trim()) {
+      setFormError('Patient full name is required');
+      return;
+    }
 
-    const created = {
-      id: patientId,
-      name: newPatient.name.trim(),
-      age: parseInt(newPatient.age) || 30,
-      gender: newPatient.gender,
-      village: newPatient.village,
-      phone: newPatient.phone || '9876XXXX' + Math.floor(10 + Math.random() * 89),
-      bloodGroup: newPatient.bloodGroup,
-      isPregnant: newPatient.isPregnant,
-      pregnancyWeek: newPatient.isPregnant ? parseInt(newPatient.pregnancyWeek) || 12 : null,
-      edd: newPatient.isPregnant ? 'In 6 months' : null,
-      registeredDate: todayStr,
-      lastVisit: 'Today',
-      conditions: newPatient.conditions ? newPatient.conditions.split(',').map(c => c.trim()) : ['General Health Intake'],
-      allergies: [newPatient.allergies || 'None known'],
-      vitals: [
-        { date: todayStr, bp: '120/80', pulse: 78, temp: 98.6, weight: 60, spo2: 98 }
-      ],
-      visits: [
-        { date: todayStr, type: 'Field Registration', notes: 'Initial community health registration completed by ASHA.', by: 'ASHA Priya' }
-      ],
-      prescriptions: [],
-      reports: [],
-    };
+    setFormError('');
+    setIsSubmitting(true);
 
-    setPatients([created, ...patients]);
-    setShowModal(false);
-    setNewPatient({
-      name: '',
-      age: '',
-      gender: 'Female',
-      village: 'Rampur',
-      phone: '',
-      bloodGroup: 'B+',
-      isPregnant: false,
-      pregnancyWeek: '',
-      conditions: '',
-      allergies: 'None known',
-    });
+    try {
+      // If not forced, check for duplicates first
+      if (!forceCreate && !duplicateWarning) {
+        const dupCheckRes = await fetch('/api/patients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newPatient.name.trim(),
+            phone: newPatient.phone.trim(),
+            village: newPatient.village,
+            checkDuplicateOnly: true,
+          }),
+        });
+
+        if (dupCheckRes.ok) {
+          const dupData = await dupCheckRes.json();
+          if (dupData.possibleDuplicate && dupData.existingPatient) {
+            setDuplicateWarning(dupData.existingPatient);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      // Save to real database
+      const res = await fetch('/api/patients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newPatient,
+          createdBy: user?.name || 'ASHA Priya',
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Database save failed');
+      }
+
+      const data = await res.json();
+      if (data.success && data.patient) {
+        setShowModal(false);
+        setDuplicateWarning(null);
+        // Navigate directly to the newly saved patient profile
+        router.push(`/asha/patients/${data.patient.id}`);
+      } else {
+        throw new Error(data.error || 'Unable to save record');
+      }
+    } catch (err) {
+      console.error('Registration failed:', err);
+      setFormError('Unable to save patient information. Please check the connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -87,12 +131,24 @@ export default function AshaPatients() {
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
         <div>
           <h1 className="page-title">Community Patients</h1>
-          <p className="page-subtitle">{patients.length} registered village members</p>
+          <p className="page-subtitle">
+            {patients.length} registered village members &bull; Persistent Relational Database
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => { setShowModal(true); setDuplicateWarning(null); setFormError(''); }}>
           <Plus size={16} /> Register Patient
         </button>
       </div>
+
+      {error && (
+        <div className="alert alert-danger" style={{ marginBottom: 'var(--space-md)' }}>
+          <AlertTriangle size={18} />
+          <span>{error}</span>
+          <button className="btn btn-sm btn-secondary" onClick={() => fetchPatients(query)} style={{ marginLeft: 'auto' }}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      )}
 
       {showModal && (
         <div style={{
@@ -107,6 +163,42 @@ export default function AshaPatients() {
         }}>
           <div className="card" style={{ maxWidth: 540, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Register New Patient</h3>
+
+            {formError && (
+              <div className="alert alert-danger" style={{ marginBottom: 'var(--space-md)' }}>
+                <AlertTriangle size={18} />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            {duplicateWarning && (
+              <div className="alert alert-warning" style={{ marginBottom: 'var(--space-md)', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                  <AlertTriangle size={18} />
+                  <span>Possible Existing Patient Found</span>
+                </div>
+                <p className="text-sm" style={{ marginTop: 4 }}>
+                  A record already exists for <strong>{duplicateWarning.name}</strong> ({duplicateWarning.id}) in <strong>{duplicateWarning.village}</strong>.
+                </p>
+                <div style={{ display: 'flex', gap: 'var(--space-xs)', marginTop: 'var(--space-sm)' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => router.push(`/asha/patients/${duplicateWarning.id}`)}
+                  >
+                    View Existing Patient
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => handleRegister(null, true)}
+                  >
+                    Create New Record Anyway
+                  </button>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleRegister}>
               <div className="form-group">
                 <label className="form-label">Full Name *</label>
@@ -219,9 +311,45 @@ export default function AshaPatients() {
                 />
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+                <div className="form-group">
+                  <label className="form-label">Blood Pressure (Initial)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="120/80"
+                    value={newPatient.bp}
+                    onChange={e => setNewPatient({ ...newPatient, bp: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Pulse (bpm)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder="76"
+                    value={newPatient.pulse}
+                    onChange={e => setNewPatient({ ...newPatient, pulse: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Complete Registration</button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowModal(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Saving to Database...' : 'Complete Registration'}
+                </button>
               </div>
             </form>
           </div>
@@ -234,7 +362,7 @@ export default function AshaPatients() {
         <input
           type="text"
           className="search-input"
-          placeholder="Search by name, ID, phone number, or village..."
+          placeholder="Search by name, patient ID, phone number, or village..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           autoComplete="off"
@@ -242,17 +370,24 @@ export default function AshaPatients() {
       </div>
 
       {/* Results */}
-      {results.length === 0 ? (
+      {loading ? (
+        <div className="loading-container" style={{ padding: 'var(--space-2xl)' }}>
+          <div className="spinner" />
+          <span>Loading patient records from database...</span>
+        </div>
+      ) : patients.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <div className="empty-state-icon"><Search /></div>
             <p className="empty-state-title">No patients found</p>
-            <p className="empty-state-text">Try searching with a different name, ID, or phone number.</p>
+            <p className="empty-state-text">
+              {query ? `No records matching "${query}" in database.` : 'No patients registered in this area yet.'}
+            </p>
           </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-          {results.map((patient) => (
+          {patients.map((patient) => (
             <div
               key={patient.id}
               className="patient-card"
@@ -267,12 +402,12 @@ export default function AshaPatients() {
                   {patient.id} &middot; {patient.age}y {patient.gender} &middot; {patient.village}
                 </div>
                 <div className="patient-meta" style={{ marginTop: 2 }}>
-                  {patient.conditions.join(', ')}
+                  {patient.conditions && Array.isArray(patient.conditions) ? patient.conditions.join(', ') : ''}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                 {patient.isPregnant && <span className="badge badge-info">Pregnant W{patient.pregnancyWeek}</span>}
-                <span className="text-xs text-muted">Last: {patient.lastVisit}</span>
+                <span className="text-xs text-muted">Registered: {patient.registeredDate}</span>
               </div>
               <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} />
             </div>

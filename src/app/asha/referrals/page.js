@@ -1,9 +1,9 @@
 'use client';
 
-import { DEMO_REFERRALS } from '@/lib/demo-data';
 import { useRouter } from 'next/navigation';
-import { ArrowRightLeft, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowRightLeft, Plus, RefreshCw, AlertTriangle, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/auth-context';
 
 const STATUS_LABELS = {
   'pending': { label: 'Pending', badge: 'badge-warning' },
@@ -15,47 +15,94 @@ const STATUS_LABELS = {
 
 export default function AshaReferrals() {
   const router = useRouter();
+  const { user } = useAuth();
   const [filter, setFilter] = useState('all');
-  const [referrals, setReferrals] = useState(DEMO_REFERRALS);
+  const [referrals, setReferrals] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+
   const [formData, setFormData] = useState({
-    patientId: 'P-2026-001',
-    patientName: 'Lakshmi Devi',
+    patientId: '',
     reason: '',
     priority: 'high',
     destination: 'PHC Rampur',
   });
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [refsRes, ptsRes] = await Promise.all([
+        fetch('/api/referrals'),
+        fetch('/api/patients')
+      ]);
+
+      if (refsRes.ok) {
+        const d = await refsRes.json();
+        setReferrals(d.referrals || []);
+      }
+      if (ptsRes.ok) {
+        const pData = await ptsRes.json();
+        setPatients(pData.patients || []);
+        if (pData.patients && pData.patients.length > 0 && !formData.patientId) {
+          setFormData(prev => ({ ...prev, patientId: pData.patients[0].id }));
+        }
+      }
+    } catch (err) {
+      console.error('Error loading referrals:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [formData.patientId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   const filtered = filter === 'all'
     ? referrals
     : referrals.filter(r => r.status === filter);
 
-  const handleCreateReferral = (e) => {
+  const handleCreateReferral = async (e) => {
     e.preventDefault();
     if (!formData.reason.trim()) return;
 
-    const newRef = {
-      id: `REF-2026-${String(referrals.length + 1).padStart(3, '0')}`,
-      ticketId: `HT-2026-000${130 + referrals.length}`,
-      patientId: formData.patientId,
-      patientName: formData.patientName,
-      reason: formData.reason,
-      priority: formData.priority,
-      destination: formData.destination,
-      createdDate: 'Today',
-      createdBy: 'ASHA Priya',
-      status: 'pending',
-    };
+    setIsSubmitting(true);
+    setFormError('');
 
-    setReferrals([newRef, ...referrals]);
-    setShowModal(false);
-    setFormData({
-      patientId: 'P-2026-001',
-      patientName: 'Lakshmi Devi',
-      reason: '',
-      priority: 'high',
-      destination: 'PHC Rampur',
-    });
+    try {
+      const selectedPatient = patients.find(p => p.id === formData.patientId) || patients[0];
+      const res = await fetch('/api/referrals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: selectedPatient?.id,
+          patientName: selectedPatient?.name,
+          reason: formData.reason,
+          priority: formData.priority,
+          destination: formData.destination,
+          createdBy: user?.name || 'ASHA Priya',
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create referral');
+
+      setShowModal(false);
+      setFormData({
+        patientId: patients[0]?.id || '',
+        reason: '',
+        priority: 'high',
+        destination: 'PHC Rampur',
+      });
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setFormError('Unable to create referral. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -63,9 +110,9 @@ export default function AshaReferrals() {
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
         <div>
           <h1 className="page-title">Referrals</h1>
-          <p className="page-subtitle">SevaConnect - Referral tracking and management</p>
+          <p className="page-subtitle">{referrals.length} referrals recorded in database</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => { setShowModal(true); setFormError(''); }}>
           <Plus size={16} /> New Referral
         </button>
       </div>
@@ -81,124 +128,146 @@ export default function AshaReferrals() {
           zIndex: 1000,
           padding: 'var(--space-md)'
         }}>
-          <div className="card" style={{ maxWidth: 500, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Create New Referral</h3>
+          <div className="card" style={{ maxWidth: 540, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>New Clinical Referral</h3>
+
+            {formError && (
+              <div className="alert alert-danger" style={{ marginBottom: 'var(--space-md)' }}>
+                <AlertTriangle size={18} />
+                <span>{formError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleCreateReferral}>
               <div className="form-group">
-                <label className="form-label">Select Patient</label>
+                <label className="form-label">Patient</label>
                 <select
                   className="form-input"
                   value={formData.patientId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    const name = id === 'P-2026-001' ? 'Lakshmi Devi' : id === 'P-2026-002' ? 'Rajesh Kumar' : 'Sunita Sharma';
-                    setFormData({ ...formData, patientId: id, patientName: name });
-                  }}
+                  onChange={e => setFormData({ ...formData, patientId: e.target.value })}
+                  required
                 >
-                  <option value="P-2026-001">Lakshmi Devi (P-2026-001) - Rampur</option>
-                  <option value="P-2026-002">Rajesh Kumar (P-2026-002) - Rampur</option>
-                  <option value="P-2026-003">Sunita Sharma (P-2026-003) - Shivpur</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Destination Facility</label>
-                <select
-                  className="form-input"
-                  value={formData.destination}
-                  onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                >
-                  <option value="PHC Rampur">PHC Rampur (Primary Health Centre)</option>
-                  <option value="CHC Shivpur">CHC Shivpur (Community Health Centre)</option>
-                  <option value="District Hospital Hyderabad">District Hospital Hyderabad</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Priority Level</label>
-                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                  {['high', 'medium', 'low'].map(p => (
-                    <button
-                      type="button"
-                      key={p}
-                      className={`btn btn-sm ${formData.priority === p ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setFormData({ ...formData, priority: p })}
-                    >
-                      {p.toUpperCase()}
-                    </button>
+                  {patients.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.id}) &mdash; {p.village}</option>
                   ))}
-                </div>
+                </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Reason for Referral</label>
+                <label className="form-label">Reason for Referral *</label>
                 <textarea
                   className="form-input"
                   rows={3}
                   required
-                  placeholder="Clinical observation, red flag symptoms, or required tests..."
+                  placeholder="Clinical reason, symptoms observed, urgency rationale..."
                   value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  onChange={e => setFormData({ ...formData, reason: e.target.value })}
                 />
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+                <div className="form-group">
+                  <label className="form-label">Priority</label>
+                  <select
+                    className="form-input"
+                    value={formData.priority}
+                    onChange={e => setFormData({ ...formData, priority: e.target.value })}
+                  >
+                    <option value="high">High Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="low">Low Priority</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Destination Facility</label>
+                  <select
+                    className="form-input"
+                    value={formData.destination}
+                    onChange={e => setFormData({ ...formData, destination: e.target.value })}
+                  >
+                    <option value="PHC Rampur">PHC Rampur</option>
+                    <option value="District Hospital Hyderabad">District Hospital</option>
+                    <option value="Community Health Centre">Community Health Centre</option>
+                  </select>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Submit Referral</button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowModal(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Saving to Database...' : 'Create Referral'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Tabs */}
       <div className="tabs">
-        {[
-          { key: 'all', label: 'All' },
-          { key: 'pending', label: 'Pending' },
-          { key: 'in-review', label: 'In Review' },
-          { key: 'accepted', label: 'Accepted' },
-          { key: 'completed', label: 'Completed' },
-        ].map(f => (
-          <button key={f.key} className={`tab ${filter === f.key ? 'active' : ''}`} onClick={() => setFilter(f.key)}>
-            {f.label}
+        {['all', 'pending', 'accepted', 'in-review', 'completed'].map(key => (
+          <button
+            key={key}
+            className={`tab ${filter === key ? 'active' : ''}`}
+            onClick={() => setFilter(key)}
+          >
+            {key.charAt(0).toUpperCase() + key.slice(1).replace('-', ' ')} ({key === 'all' ? referrals.length : referrals.filter(r => r.status === key).length})
           </button>
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="loading-container" style={{ padding: 'var(--space-2xl)' }}>
+          <div className="spinner" />
+          <span>Loading referrals from database...</span>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon"><ArrowRightLeft /></div>
-            <p className="empty-state-title">No referrals</p>
-            <p className="empty-state-text">No referrals match the selected filter.</p>
+            <ArrowRightLeft size={32} style={{ color: 'var(--color-text-muted)', margin: '0 auto var(--space-sm)' }} />
+            <p className="empty-state-title">No referrals found</p>
+            <p className="empty-state-text">No referrals matching this filter in the database.</p>
           </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-          {filtered.map(ref => {
-            const status = STATUS_LABELS[ref.status] || { label: ref.status, badge: 'badge-neutral' };
-            return (
-              <div key={ref.id} className="card" style={{ padding: 'var(--space-md)' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span className="font-bold text-sm">{ref.id}</span>
-                      <span className={`badge ${ref.priority === 'high' ? 'badge-danger' : 'badge-warning'}`}>{ref.priority}</span>
-                      <span className={`badge ${status.badge}`}>{status.label}</span>
-                    </div>
-                    <div className="font-semibold">{ref.patientName}</div>
-                    <div className="text-sm text-secondary" style={{ marginTop: 2 }}>{ref.reason}</div>
-                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-                      Destination: {ref.destination} | Created: {ref.createdDate}
-                    </div>
+          {filtered.map(r => (
+            <div key={r.id} className="card" style={{ padding: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                    <span className="font-semibold text-sm">{r.id}</span>
+                    <span className={`badge ${STATUS_LABELS[r.status]?.badge || 'badge-neutral'}`}>
+                      {STATUS_LABELS[r.status]?.label || r.status}
+                    </span>
+                    <span className={`badge ${r.priority === 'high' ? 'badge-danger' : 'badge-warning'}`}>{r.priority}</span>
                   </div>
-                  <button className="btn btn-sm btn-secondary" onClick={() => router.push(`/asha/patients/${ref.patientId}`)}>
-                    View Patient
-                  </button>
+                  <h3 style={{ fontSize: 'var(--font-size-base)', fontWeight: 600, marginTop: 'var(--space-xs)', marginBottom: 2 }}>{r.reason}</h3>
+                  <p className="text-xs text-muted">
+                    Patient: <strong>{r.patientName}</strong> ({r.patientId}) &bull; Destination: <strong>{r.destination}</strong> &bull; Created: {r.createdDate} by {r.createdBy}
+                  </p>
                 </div>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => router.push(`/asha/patients/${r.patientId}`)}
+                >
+                  View Patient <ChevronRight size={14} />
+                </button>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

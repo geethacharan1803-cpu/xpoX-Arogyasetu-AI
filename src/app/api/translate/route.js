@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 export async function POST(request) {
   try {
     const { text, sourceLang, targetLang } = await request.json();
+    const apiKey = process.env.GEMINI_API_KEY;
 
     if (!text) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });

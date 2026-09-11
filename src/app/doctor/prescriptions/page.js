@@ -1,21 +1,42 @@
 'use client';
 
-import { useState } from 'react';
-import { DEMO_PATIENTS } from '@/lib/demo-data';
+import { useState, useEffect } from 'react';
 import { Pill, AlertTriangle, Volume2, Globe, CheckCircle } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
 
 export default function DoctorPrescriptions() {
-  const [selectedPatient, setSelectedPatient] = useState('P-2026-002');
+  const { user } = useAuth();
+  const [patients, setPatients] = useState([]);
+  const [selectedPatient, setSelectedPatient] = useState('');
   const [medicines, setMedicines] = useState([
     { name: 'Metformin', dosage: '500mg', frequency: 'Twice daily', duration: '30 days' },
     { name: 'Amlodipine', dosage: '5mg', frequency: 'Once daily (morning)', duration: '30 days' },
   ]);
   const [notes, setNotes] = useState('Monitor fasting sugar and record daily blood pressure with ASHA Priya.');
   const [saved, setSaved] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [verifiedExplainer, setVerifiedExplainer] = useState(null);
 
+  useEffect(() => {
+    async function loadPatients() {
+      try {
+        const res = await fetch('/api/patients');
+        if (res.ok) {
+          const d = await res.json();
+          setPatients(d.patients || []);
+          if (d.patients && d.patients.length > 0) {
+            setSelectedPatient(d.patients[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading patients for prescriptions:', err);
+      }
+    }
+    loadPatients();
+  }, []);
+
   const addMedicine = () => {
-    setMedicines([...medicines, { name: '', dosage: '', frequency: '', duration: '' }]);
+    setMedicines([...medicines, { name: '', dosage: '', frequency: 'Twice daily', duration: '5 days' }]);
   };
 
   const updateMedicine = (index, field, value) => {
@@ -30,30 +51,58 @@ export default function DoctorPrescriptions() {
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    setSaved(true);
+    const validMeds = medicines.filter(m => m.name.trim());
+    if (validMeds.length === 0 || !selectedPatient) return;
 
-    const patient = DEMO_PATIENTS.find(p => p.id === selectedPatient) || DEMO_PATIENTS[0];
-    const medList = medicines.filter(m => m.name.trim()).map(m => `${m.name} (${m.dosage}, ${m.frequency})`).join(', ');
+    setIsSubmitting(true);
+    const patient = patients.find(p => p.id === selectedPatient) || { name: 'Patient', id: selectedPatient };
+    const medList = validMeds.map(m => `${m.name} (${m.dosage}, ${m.frequency})`).join(', ');
 
-    // Generate verified explainer that preserves exact medication and dose
-    const explainer = {
-      patientName: patient.name,
-      patientId: patient.id,
-      prescribedMedicines: medicines.filter(m => m.name.trim()),
-      telugu: `రోగి ${patient.name} కొరకు వైద్యుల సూచనలు: ${medList}. మందులను ప్రతిరోజూ క్రమం తప్పకుండా భోజనం తర్వాత తగినంత నీటితో మాత్రమే వేసుకోవాలి. మోతాదు మార్చవద్దు.`,
-      hindi: `मरीज ${patient.name} के लिए डॉक्टर की सलाह: ${medList}। दवाइयां नियमित रूप से भोजन के बाद पर्याप्त पानी के साथ लें। खुराक में कोई बदलाव न करें।`,
-      english: `Verified Instructions for ${patient.name}: ${medList}. Take strictly as directed after meals. Do not alter dose or duration without consulting your PHC doctor.`,
-      notes: notes,
-      timestamp: new Date().toLocaleTimeString(),
-    };
+    const teluguText = `రోగి ${patient.name} కొరకు వైద్యుల సూచనలు: ${medList}. మందులను ప్రతిరోజూ క్రమం తప్పకుండా భోజనం తర్వాత తగినంత నీటితో మాత్రమే వేసుకోవాలి. మోతాదు మార్చవద్దు.`;
+    const hindiText = `मरीज ${patient.name} के लिए डॉक्टर की सलाह: ${medList}। दवाइयां नियमित रूप से भोजन के बाद पर्याप्त पानी के साथ लें। खुराक में कोई बदलाव न करें।`;
+    const englishText = `Verified Instructions for ${patient.name}: ${medList}. Take strictly as directed after meals. Do not alter dose or duration without consulting your PHC doctor.`;
 
-    setVerifiedExplainer(explainer);
+    try {
+      const res = await fetch('/api/prescriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: selectedPatient,
+          doctorId: user?.id || 'U-002',
+          doctorName: user?.name || 'Dr. Sharma',
+          medicines: validMeds,
+          notes,
+          teluguInstructions: teluguText,
+          hindiInstructions: hindiText,
+          englishInstructions: englishText,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Database save failed');
+
+      setSaved(true);
+      setVerifiedExplainer({
+        patientName: patient.name,
+        patientId: patient.id,
+        prescribedMedicines: validMeds,
+        telugu: teluguText,
+        hindi: hindiText,
+        english: englishText,
+        notes,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+    } catch (err) {
+      console.error('Error saving prescription:', err);
+      alert('Unable to authorize prescription in database. Please check connection and retry.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const speak = (text, lang) => {
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = lang;
@@ -65,8 +114,8 @@ export default function DoctorPrescriptions() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Prescriptions & Care Directives</h1>
-        <p className="page-subtitle">Clinician-authorized prescriptions with verified patient vernacular instructions</p>
+        <h1 className="page-title">Prescriptions &amp; Care Directives</h1>
+        <p className="page-subtitle">Clinician-authorized prescriptions persisted in database with verified vernacular directives</p>
       </div>
 
       <div className="alert alert-warning" style={{ marginBottom: 'var(--space-md)' }}>
@@ -79,7 +128,7 @@ export default function DoctorPrescriptions() {
       {saved && (
         <div className="alert alert-success" style={{ marginBottom: 'var(--space-md)' }}>
           <CheckCircle size={18} />
-          <span>Prescription authorized and locked into patient care continuity record.</span>
+          <span>Prescription authorized and locked into patient clinical continuity database.</span>
         </div>
       )}
 
@@ -88,10 +137,14 @@ export default function DoctorPrescriptions() {
         <form onSubmit={handleSave}>
           <div className="form-group">
             <label className="form-label">Patient</label>
-            <select className="form-select" value={selectedPatient} onChange={e => setSelectedPatient(e.target.value)} required>
-              <option value="">Select patient...</option>
-              {DEMO_PATIENTS.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+            <select
+              className="form-select"
+              value={selectedPatient}
+              onChange={e => setSelectedPatient(e.target.value)}
+              required
+            >
+              {patients.map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.id}) &mdash; {p.village}</option>
               ))}
             </select>
           </div>
@@ -119,7 +172,7 @@ export default function DoctorPrescriptions() {
                   {i === 0 && <label className="form-label">Duration</label>}
                   <input className="form-input" placeholder="e.g. 7 days" value={med.duration} onChange={e => updateMedicine(i, 'duration', e.target.value)} required />
                 </div>
-                <button type="button" className="btn btn-sm btn-danger" onClick={() => removeMedicine(i)} style={{ marginBottom: i === 0 ? 0 : 0 }}>
+                <button type="button" className="btn btn-sm btn-danger" onClick={() => removeMedicine(i)}>
                   Remove
                 </button>
               </div>
@@ -127,12 +180,14 @@ export default function DoctorPrescriptions() {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Doctor Notes</label>
+            <label className="form-label">Doctor Clinical Notes</label>
             <textarea className="form-textarea" placeholder="Additional instructions or notes..." value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-            <button type="submit" className="btn btn-primary"><Pill size={16} /> Authorize & Save Prescription</button>
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+              <Pill size={16} /> {isSubmitting ? 'Authorizing & Saving...' : 'Authorize & Save Prescription'}
+            </button>
             <button type="button" className="btn btn-secondary" onClick={() => setVerifiedExplainer(null)}>Reset</button>
           </div>
         </form>
@@ -142,45 +197,43 @@ export default function DoctorPrescriptions() {
         <div className="card" style={{ marginTop: 'var(--space-lg)', borderLeft: '4px solid var(--color-primary)' }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
             <div>
-              <h3 className="card-title">Verified Patient Explainer — &ldquo;Voice Back to Patient&rdquo;</h3>
+              <h3 className="card-title">Verified Patient Explainer &mdash; &ldquo;Voice Back to Patient&rdquo;</h3>
               <p className="text-xs text-muted">Generated for {verifiedExplainer.patientName} ({verifiedExplainer.patientId}) at {verifiedExplainer.timestamp}</p>
             </div>
-            <span className="badge badge-success">Audit Trail Preserved</span>
+            <span className="badge badge-success">Saved to Database</span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', marginTop: 'var(--space-md)' }}>
-            {/* Telugu Explainer */}
-            <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
-                <span className="font-semibold text-sm">తెలుగు (Telugu Patient Instructions)</span>
-                <button className="btn btn-sm btn-primary" onClick={() => speak(verifiedExplainer.telugu, 'te-IN')}>
-                  <Volume2 size={14} /> Listen in Telugu
-                </button>
-              </div>
-              <p className="text-sm font-medium" style={{ lineHeight: 1.6 }}>{verifiedExplainer.telugu}</p>
+          {/* Telugu */}
+          <div style={{ marginBottom: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
+              <span className="badge badge-info">తెలుగు (Telugu)</span>
+              <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.telugu, 'te-IN')}>
+                <Volume2 size={14} /> Listen
+              </button>
             </div>
+            <p className="text-sm">{verifiedExplainer.telugu}</p>
+          </div>
 
-            {/* Hindi Explainer */}
-            <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
-                <span className="font-semibold text-sm">हिन्दी (Hindi Patient Instructions)</span>
-                <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.hindi, 'hi-IN')}>
-                  <Volume2 size={14} /> Listen in Hindi
-                </button>
-              </div>
-              <p className="text-sm font-medium" style={{ lineHeight: 1.6 }}>{verifiedExplainer.hindi}</p>
+          {/* Hindi */}
+          <div style={{ marginBottom: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
+              <span className="badge badge-info">हिन्दी (Hindi)</span>
+              <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.hindi, 'hi-IN')}>
+                <Volume2 size={14} /> Listen
+              </button>
             </div>
+            <p className="text-sm">{verifiedExplainer.hindi}</p>
+          </div>
 
-            {/* English Explainer */}
-            <div style={{ background: 'var(--color-bg)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
-                <span className="font-semibold text-sm">English Clinical Copy</span>
-                <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.english, 'en-IN')}>
-                  <Volume2 size={14} /> Listen in English
-                </button>
-              </div>
-              <p className="text-sm text-secondary">{verifiedExplainer.english}</p>
+          {/* English */}
+          <div style={{ padding: 'var(--space-md)', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
+              <span className="badge badge-info">English</span>
+              <button className="btn btn-sm btn-secondary" onClick={() => speak(verifiedExplainer.english, 'en-IN')}>
+                <Volume2 size={14} /> Listen
+              </button>
             </div>
+            <p className="text-sm">{verifiedExplainer.english}</p>
           </div>
         </div>
       )}

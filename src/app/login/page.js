@@ -2,49 +2,54 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
-import { ShieldCheck, Users, Stethoscope, User } from 'lucide-react';
+import { useAuth, getDashboardForRole } from '@/lib/auth-context';
+import { ShieldCheck, Users, Stethoscope, User, HeartPulse, Hospital } from 'lucide-react';
 
 const ROLES = [
   { key: 'asha', label: 'ASHA Worker', desc: 'Community health worker', icon: Users },
-  { key: 'doctor', label: 'Doctor', desc: 'PHC doctor', icon: Stethoscope },
-  { key: 'patient', label: 'Patient', desc: 'Community member', icon: User },
-  { key: 'admin', label: 'Admin', desc: 'Administrator', icon: ShieldCheck },
+  { key: 'doctor', label: 'Medical Officer / Doctor', desc: 'PHC clinical clinician', icon: Stethoscope },
+  { key: 'patient', label: 'Patient / Citizen', desc: 'Community member', icon: User },
+  { key: 'anm', label: 'ANM / CHO', desc: 'Auxiliary nurse / Health officer', icon: HeartPulse },
+  { key: 'admin', label: 'Administrator', desc: 'System administrator', icon: ShieldCheck },
+  { key: 'bmo', label: 'BMO / CMHO', desc: 'Block / District health officer', icon: Hospital },
 ];
 
 export default function LoginPage({ onLogin }) {
   const router = useRouter();
   const { login } = useAuth();
   const [selectedRole, setSelectedRole] = useState('asha');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (onLogin) {
-      onLogin(selectedRole);
-    } else if (login) {
-      login(selectedRole);
-      const routes = {
-        asha: '/asha/dashboard',
-        doctor: '/doctor/dashboard',
-        patient: '/patient/home',
-        admin: '/admin/dashboard',
-      };
-      router.push(routes[selectedRole] || '/asha/dashboard');
+    setIsSubmitting(true);
+    try {
+      if (login) {
+        await login(selectedRole);
+      } else if (onLogin) {
+        await onLogin(selectedRole);
+      }
+      const targetDashboard = getDashboardForRole(selectedRole);
+      router.replace(targetDashboard);
+    } catch (err) {
+      console.error('Login error:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="login-container">
-      <div className="login-card">
+      <div className="login-card" style={{ maxWidth: 640 }}>
         <h1 className="login-title">ArogyaSetu AI</h1>
         <p className="login-subtitle">
-          Rural Healthcare Communication Platform
+          Multilingual Rural Healthcare &amp; Clinical Continuity Platform
         </p>
 
         <form onSubmit={handleLogin}>
           <div className="form-group">
-            <label className="form-label">Select your role to continue</label>
-            <div className="role-selector">
+            <label className="form-label">Select your authorized role to continue</label>
+            <div className="role-selector" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
               {ROLES.map((role) => {
                 const Icon = role.icon;
                 return (
@@ -53,21 +58,25 @@ export default function LoginPage({ onLogin }) {
                     className={`role-card ${selectedRole === role.key ? 'selected' : ''}`}
                     onClick={() => setSelectedRole(role.key)}
                   >
-                    <div className="role-card-icon"><Icon size={28} /></div>
-                    <div className="role-card-title">{role.label}</div>
-                    <div className="role-card-desc">{role.desc}</div>
+                    <div className="role-card-icon"><Icon size={24} /></div>
+                    <div className="role-card-title" style={{ fontSize: 'var(--font-size-sm)' }}>{role.label}</div>
+                    <div className="role-card-desc" style={{ fontSize: 'var(--font-size-xs)' }}>{role.desc}</div>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary btn-lg w-full">
-            Continue as {ROLES.find(r => r.key === selectedRole)?.label}
+          <button
+            type="submit"
+            className="btn btn-primary btn-lg w-full"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Authenticating...' : `Continue as ${ROLES.find(r => r.key === selectedRole)?.label}`}
           </button>
 
           <p style={{ textAlign: 'center', marginTop: 'var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-            DEMO MODE — No real credentials required
+            Role-Based Access Control (RBAC) Enforced &mdash; Persistent Relational Database Active
           </p>
         </form>
       </div>

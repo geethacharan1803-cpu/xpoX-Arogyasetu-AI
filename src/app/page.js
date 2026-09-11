@@ -1,28 +1,20 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import Providers from './providers';
+import { useAuth, getDashboardForRole } from '@/lib/auth-context';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 const ClientLayout = dynamic(() => import('./client-layout'), { ssr: false });
 
 function RedirectHome() {
-  // Dynamically imported to avoid SSR issues
-  const { useAuth } = require('@/lib/auth-context');
-  const { useRouter } = require('next/navigation');
-  const { useEffect } = require('react');
-
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && user) {
-      const routes = {
-        asha: '/asha/dashboard',
-        doctor: '/doctor/dashboard',
-        patient: '/patient/home',
-        admin: '/admin/dashboard',
-      };
-      router.replace(routes[user.role] || '/asha/dashboard');
+      const target = getDashboardForRole(user.role);
+      router.replace(target);
     }
   }, [user, loading, router]);
 
@@ -30,7 +22,7 @@ function RedirectHome() {
     return (
       <div className="loading-container" style={{ minHeight: '100vh' }}>
         <div className="spinner" />
-        <span>Loading...</span>
+        <span>Loading ArogyaSetu AI...</span>
       </div>
     );
   }

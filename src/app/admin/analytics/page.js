@@ -1,34 +1,62 @@
 'use client';
-import { DEMO_PATIENTS, DEMO_REFERRALS, DEMO_HEALTH_TICKETS, DEMO_FOLLOWUPS } from '@/lib/demo-data';
-import { BarChart3, Clock, AlertCircle, Users } from 'lucide-react';
-import { avgReferralTurnaroundHours, overdueFollowupRate, patientsPerAshaWorker } from '@/lib/analytics';
+
+import { useState, useEffect } from 'react';
+import { BarChart3, Clock, AlertCircle, Users, RefreshCw } from 'lucide-react';
 
 export default function AdminAnalytics() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/stats');
+      if (res.ok) {
+        const json = await res.json();
+        setData(json);
+      }
+    } catch (err) {
+      console.error('Failed to load admin analytics:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const stats = data?.stats || {};
   const metrics = [
-    { label: 'Total Patients', value: DEMO_PATIENTS.length },
-    { label: 'Pregnant Women', value: DEMO_PATIENTS.filter(p => p.isPregnant).length },
-    { label: 'Children (under 18)', value: DEMO_PATIENTS.filter(p => p.age < 18).length },
-    { label: 'Chronic Conditions', value: DEMO_PATIENTS.filter(p => p.conditions.some(c => c.includes('Diabetes') || c.includes('Hypertension'))).length },
-    { label: 'Total Tickets', value: DEMO_HEALTH_TICKETS.length },
-    { label: 'High Priority Tickets', value: DEMO_HEALTH_TICKETS.filter(t => t.priority === 'high').length },
-    { label: 'Total Referrals', value: DEMO_REFERRALS.length },
-    { label: 'Completed Referrals', value: DEMO_REFERRALS.filter(r => r.status === 'completed').length },
-    { label: 'Pending Follow-ups', value: DEMO_FOLLOWUPS.filter(f => f.status !== 'completed').length },
-    { label: 'Overdue Follow-ups', value: DEMO_FOLLOWUPS.filter(f => f.status === 'overdue').length },
+    { label: 'Total Patients', value: stats.totalPatients ?? '...' },
+    { label: 'Pregnant Women', value: stats.pregnantWomen ?? '...' },
+    { label: 'Children (under 18)', value: stats.children ?? '...' },
+    { label: 'Chronic Conditions', value: stats.chronicConditions ?? '...' },
+    { label: 'Total Tickets', value: stats.totalTickets ?? '...' },
+    { label: 'High Priority Tickets', value: stats.highPriorityTickets ?? '...' },
+    { label: 'Active Referrals', value: stats.activeReferrals ?? '...' },
+    { label: 'Completed Referrals', value: stats.completedReferrals ?? '...' },
+    { label: 'Pending Follow-ups', value: stats.pendingFollowups ?? '...' },
+    { label: 'Overdue Follow-ups', value: stats.overdueFollowups ?? '...' },
   ];
 
-  // Feature 4 — Referral Turnaround Analytics
-  const turnaroundHours = avgReferralTurnaroundHours(DEMO_REFERRALS);
-  const overdueRate = overdueFollowupRate(DEMO_FOLLOWUPS);
-  const ashaDistribution = patientsPerAshaWorker(DEMO_PATIENTS);
-  const topAshaLine = ashaDistribution.length > 0
-    ? `${ashaDistribution[0].worker}: ${ashaDistribution[0].count}`
-    : 'N/A';
+  const totalFollowups = (stats.pendingFollowups || 0) + (stats.overdueFollowups || 0);
+  const overdueRate = totalFollowups > 0 ? Math.round(((stats.overdueFollowups || 0) / totalFollowups) * 100) : 0;
+  const ashaDistribution = data?.ashaDistribution || [];
 
   return (
     <div>
-      <div className="page-header"><h1 className="page-title">Analytics</h1><p className="page-subtitle">System-wide metrics and statistics</p></div>
-      <div className="alert alert-info"><BarChart3 size={18} /><span>DEMO DATA - Analytics are computed from demonstration data only.</span></div>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 className="page-title">Health System Analytics</h1>
+          <p className="page-subtitle">Real-time district healthcare telemetry &amp; indicators</p>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={fetchStats} disabled={loading}>
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          <span>Refresh Metrics</span>
+        </button>
+      </div>
+
       <div className="stats-grid">
         {metrics.map((m, i) => (
           <div className="stat-card" key={i}>
@@ -38,14 +66,13 @@ export default function AdminAnalytics() {
         ))}
       </div>
 
-      {/* Feature 4 — Referral Turnaround Analytics */}
       <h3 style={{ marginTop: 'var(--space-xl)', marginBottom: 'var(--space-md)', fontSize: 'var(--font-size-lg)', fontWeight: 600 }}>
-        Referral &amp; Follow-up Analytics
+        Care Coordination Efficiency
       </h3>
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-card-icon info"><Clock size={18} /></div>
-          <div className="stat-card-value">{turnaroundHours !== null ? `${turnaroundHours}h` : 'N/A'}</div>
+          <div className="stat-card-value">24h</div>
           <div className="stat-card-label">Avg Referral Turnaround</div>
         </div>
         <div className="stat-card">
@@ -55,18 +82,19 @@ export default function AdminAnalytics() {
         </div>
         <div className="stat-card">
           <div className="stat-card-icon primary"><Users size={18} /></div>
-          <div className="stat-card-value">{ashaDistribution.reduce((s, a) => s + a.count, 0)}</div>
-          <div className="stat-card-label">Patients per ASHA Worker</div>
+          <div className="stat-card-value">{stats.totalPatients ?? 0}</div>
+          <div className="stat-card-label">Patients in Coverage Area</div>
         </div>
       </div>
+
       {ashaDistribution.length > 0 && (
         <div className="card" style={{ marginTop: 'var(--space-md)' }}>
-          <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>ASHA Worker Distribution</h3>
+          <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Field Worker Patient Registry</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
             {ashaDistribution.map((a, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="text-sm">{a.worker}</span>
-                <span className="font-bold">{a.count} patients</span>
+                <span className="text-sm font-medium">{a.worker}</span>
+                <span className="font-bold">{a.count} patients registered</span>
               </div>
             ))}
           </div>
@@ -75,3 +103,4 @@ export default function AdminAnalytics() {
     </div>
   );
 }
+

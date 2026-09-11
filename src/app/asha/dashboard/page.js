@@ -1,8 +1,8 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
-import { DEMO_PATIENTS, DEMO_HEALTH_TICKETS, DEMO_REFERRALS, DEMO_FOLLOWUPS } from '@/lib/demo-data';
 import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import {
   Users, FileText, ArrowRightLeft, CalendarCheck, Heart,
   AlertTriangle, RefreshCw, ChevronRight, Clock
@@ -12,19 +12,61 @@ export default function AshaDashboard() {
   const { user } = useAuth();
   const router = useRouter();
 
-  const pregnantWomen = DEMO_PATIENTS.filter(p => p.isPregnant);
-  const pendingReferrals = DEMO_REFERRALS.filter(r => r.status === 'pending' || r.status === 'in-review');
-  const todayFollowups = DEMO_FOLLOWUPS.filter(f => f.status === 'due-today');
-  const overdueFollowups = DEMO_FOLLOWUPS.filter(f => f.status === 'overdue');
-  const highPriorityTickets = DEMO_HEALTH_TICKETS.filter(t => t.priority === 'high' && t.status !== 'follow-up-scheduled');
-  const recentPatients = [...DEMO_PATIENTS].sort((a, b) => new Date(b.lastVisit) - new Date(a.lastVisit)).slice(0, 5);
+  const [patients, setPatients] = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [referrals, setReferrals] = useState([]);
+  const [followups, setFollowups] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        const [ptsRes, tksRes, refsRes, fusRes] = await Promise.all([
+          fetch('/api/patients'),
+          fetch('/api/tickets'),
+          fetch('/api/referrals'),
+          fetch('/api/followups')
+        ]);
+
+        if (ptsRes.ok) {
+          const d = await ptsRes.json();
+          setPatients(d.patients || []);
+        }
+        if (tksRes.ok) {
+          const d = await tksRes.json();
+          setTickets(d.tickets || []);
+        }
+        if (refsRes.ok) {
+          const d = await refsRes.json();
+          setReferrals(d.referrals || []);
+        }
+        if (fusRes.ok) {
+          const d = await fusRes.json();
+          setFollowups(d.followups || []);
+        }
+      } catch (e) {
+        console.error('Error loading dashboard data:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboardData();
+  }, []);
+
+  const pregnantWomen = patients.filter(p => p.isPregnant);
+  const pendingReferrals = referrals.filter(r => r.status === 'pending' || r.status === 'in-review');
+  const todayFollowups = followups.filter(f => f.status === 'due-today');
+  const overdueFollowups = followups.filter(f => f.status === 'overdue');
+  const highPriorityTickets = tickets.filter(t => t.priority === 'high' && t.status !== 'follow-up-scheduled');
+  const recentPatients = patients.slice(0, 5);
 
   const stats = [
-    { label: 'Today\'s Follow-ups', value: todayFollowups.length, icon: CalendarCheck, color: 'primary' },
+    { label: "Today's Follow-ups", value: todayFollowups.length, icon: CalendarCheck, color: 'primary' },
     { label: 'Overdue Follow-ups', value: overdueFollowups.length, icon: AlertTriangle, color: overdueFollowups.length > 0 ? 'danger' : 'success' },
     { label: 'Pending Referrals', value: pendingReferrals.length, icon: ArrowRightLeft, color: 'warning' },
     { label: 'Pregnant Women', value: pregnantWomen.length, icon: Heart, color: 'info' },
-    { label: 'Total Patients', value: DEMO_PATIENTS.length, icon: Users, color: 'primary' },
+    { label: 'Total Patients', value: patients.length, icon: Users, color: 'primary' },
     { label: 'High Priority', value: highPriorityTickets.length, icon: AlertTriangle, color: highPriorityTickets.length > 0 ? 'danger' : 'success' },
   ];
 
@@ -37,9 +79,15 @@ export default function AshaDashboard() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Dashboard</h1>
-        <p className="page-subtitle">Welcome back, {user?.name || 'ASHA Worker'}. Here is your daily overview.</p>
+        <h1 className="page-title">ASHA Dashboard</h1>
+        <p className="page-subtitle">Welcome back, {user?.name || 'ASHA Worker'}. Here is your community health overview.</p>
       </div>
+
+      {loading && (
+        <div style={{ marginBottom: 'var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+          Syncing with database records...
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="stats-grid">
@@ -90,29 +138,30 @@ export default function AshaDashboard() {
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-            {recentPatients.map((patient) => (
-              <div
-                key={patient.id}
-                className="patient-card"
-                onClick={() => router.push(`/asha/patients/${patient.id}`)}
-              >
-                <div className="patient-avatar">
-                  {patient.name.split(' ').map(w => w[0]).join('').substring(0, 2)}
-                </div>
-                <div className="patient-info">
-                  <div className="patient-name">{patient.name}</div>
-                  <div className="patient-meta">
-                    {patient.id} &middot; {patient.age}y {patient.gender} &middot; {patient.village}
+            {recentPatients.length === 0 ? (
+              <p className="text-sm text-muted">No patients registered yet.</p>
+            ) : (
+              recentPatients.map((patient) => (
+                <div
+                  key={patient.id}
+                  className="patient-card"
+                  onClick={() => router.push(`/asha/patients/${patient.id}`)}
+                >
+                  <div className="patient-avatar">
+                    {patient.name.split(' ').map(w => w[0]).join('').substring(0, 2)}
+                  </div>
+                  <div className="patient-info">
+                    <div className="patient-name">{patient.name}</div>
+                    <div className="patient-meta">
+                      {patient.id} &middot; {patient.age}y {patient.gender} &middot; {patient.village}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {patient.isPregnant && <span className="badge badge-info">Pregnant</span>}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  {patient.isPregnant && <span className="badge badge-info">Pregnant</span>}
-                  {patient.conditions.some(c => c.includes('Diabetes') || c.includes('Hypertension')) && (
-                    <span className="badge badge-warning">Chronic</span>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -124,7 +173,7 @@ export default function AshaDashboard() {
         </div>
         <div className="stats-grid" style={{ marginBottom: 0 }}>
           <div className="stat-card">
-            <div className="stat-card-value">{DEMO_PATIENTS.length}</div>
+            <div className="stat-card-value">{patients.length}</div>
             <div className="stat-card-label">Registered Patients</div>
           </div>
           <div className="stat-card">
@@ -132,7 +181,7 @@ export default function AshaDashboard() {
             <div className="stat-card-label">Pregnant Women</div>
           </div>
           <div className="stat-card">
-            <div className="stat-card-value">{DEMO_PATIENTS.filter(p => p.age < 18).length}</div>
+            <div className="stat-card-value">{patients.filter(p => p.age < 18).length}</div>
             <div className="stat-card-label">Children</div>
           </div>
           <div className="stat-card">

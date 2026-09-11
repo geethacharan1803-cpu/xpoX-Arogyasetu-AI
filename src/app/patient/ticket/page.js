@@ -1,20 +1,36 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
-import { DEMO_PATIENTS, DEMO_HEALTH_TICKETS } from '@/lib/demo-data';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { FileText, CheckCircle, Volume2 } from 'lucide-react';
 
 export default function PatientTicket() {
   const { user } = useAuth();
-  const router = useRouter();
-  const patient = DEMO_PATIENTS.find(p => p.id === user?.patientId) || DEMO_PATIENTS[0];
-  const tickets = DEMO_HEALTH_TICKETS.filter(t => t.patientId === patient.id);
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadTickets() {
+      const pid = user?.patientId || 'P-2026-001';
+      try {
+        const res = await fetch(`/api/tickets?patientId=${pid}`);
+        if (res.ok) {
+          const d = await res.json();
+          setTickets(d.tickets || []);
+        }
+      } catch (err) {
+        console.error('Error fetching patient tickets:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadTickets();
+  }, [user]);
 
   const speakProgress = (ticket) => {
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const lastCompleted = [...ticket.timeline].reverse().find(t => t.completed);
+      const lastCompleted = [...(ticket.timeline || [])].reverse().find(t => t.completed);
       const text = `మీ హెల్త్ టిక్కెట్ ${ticket.id} ప్రస్తుత సమాచారం: ${ticket.concern}. ప్రస్తుత దశ: ${lastCompleted ? lastCompleted.step : 'ప్రారంభం'}. ${lastCompleted?.note || ''}`;
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'te-IN';
@@ -27,15 +43,20 @@ export default function PatientTicket() {
     <div>
       <div className="page-header">
         <h1 className="page-title">My Health Tickets</h1>
-        <p className="page-subtitle">View your health ticket history</p>
+        <p className="page-subtitle">Track your health concerns and doctor review progress &bull; Database Records</p>
       </div>
 
-      {tickets.length === 0 ? (
+      {loading ? (
+        <div className="loading-container" style={{ padding: 'var(--space-2xl)' }}>
+          <div className="spinner" />
+          <span>Loading your tickets...</span>
+        </div>
+      ) : tickets.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <div className="empty-state-icon"><FileText /></div>
             <p className="empty-state-title">No health tickets</p>
-            <p className="empty-state-text">You do not have any health tickets yet.</p>
+            <p className="empty-state-text">You do not have any active health tickets.</p>
           </div>
         </div>
       ) : (
@@ -43,22 +64,23 @@ export default function PatientTicket() {
           <div key={ticket.id} className="card" style={{ marginBottom: 'var(--space-md)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-primary-700)' }}>{ticket.id}</h2>
+                <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-primary-700)', margin: 0 }}>{ticket.id}</h2>
                 <span className={`badge ${ticket.priority === 'high' ? 'badge-danger' : 'badge-warning'}`}>{ticket.priority}</span>
+                <span className="badge badge-neutral">{ticket.status}</span>
               </div>
               <button className="btn btn-sm btn-secondary" onClick={() => speakProgress(ticket)}>
-                <Volume2 size={14} /> Listen (తెలుగు)
+                <Volume2 size={14} /> Listen Progress (తెలుగు)
               </button>
             </div>
             <p className="font-semibold">{ticket.concern}</p>
-            <p className="text-sm text-muted" style={{ marginTop: 4 }}>Created: {ticket.createdDate}</p>
+            <p className="text-sm text-muted" style={{ marginTop: 4 }}>Created on: {ticket.createdDate} by {ticket.createdBy}</p>
 
             <div style={{ marginTop: 'var(--space-lg)' }}>
-              <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Progress</h3>
+              <h3 className="card-title" style={{ marginBottom: 'var(--space-md)' }}>Clinical Progress</h3>
               <div className="timeline">
-                {ticket.timeline.map((item, i) => (
+                {ticket.timeline && ticket.timeline.map((item, i) => (
                   <div key={i} className="timeline-item">
-                    <div className={`timeline-dot ${item.completed ? 'completed' : 'pending'}`} />
+                    <div className={`timeline-dot ${item.completed ? 'completed' : ''}`} />
                     <div className="timeline-title">{item.step}</div>
                     <div className="timeline-time">{item.date || 'Pending'}</div>
                     {item.note && <div className="timeline-desc">{item.note}</div>}
