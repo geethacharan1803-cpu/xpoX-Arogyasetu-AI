@@ -24,18 +24,34 @@ export async function POST(request) {
       [user.id, user.role, 'USER_LOGIN', 'users', user.id, `User ${user.name} logged in with role ${user.role}`]
     );
 
+    const userData = {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      email: user.email_or_username,
+      phone: user.phone,
+      phc: user.phc,
+      area: user.area,
+      patientId: user.patient_id,
+    };
+
+    // Generate lightweight session token (base64 encoded user info for API auth)
+    let sessionToken = null;
+    try {
+      sessionToken = Buffer.from(JSON.stringify({
+        id: user.id,
+        role: user.role,
+        name: user.name,
+        patientId: user.patient_id || null,
+      })).toString('base64');
+    } catch {
+      // Buffer may not be available in edge runtime
+    }
+
     return NextResponse.json({
       success: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-        email: user.email_or_username,
-        phone: user.phone,
-        phc: user.phc,
-        area: user.area,
-        patientId: user.patient_id,
-      }
+      user: userData,
+      sessionToken,
     });
   } catch (error) {
     console.error('Login error:', error);

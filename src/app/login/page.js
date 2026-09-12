@@ -3,15 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, getDashboardForRole } from '@/lib/auth-context';
-import { ShieldCheck, Users, Stethoscope, User, HeartPulse, Hospital } from 'lucide-react';
+import { ShieldCheck, Users, Stethoscope, User, HeartPulse, Hospital, Clipboard, Building } from 'lucide-react';
 
 const ROLES = [
   { key: 'asha', label: 'ASHA Worker', desc: 'Community health worker', icon: Users },
   { key: 'doctor', label: 'Medical Officer / Doctor', desc: 'PHC clinical clinician', icon: Stethoscope },
   { key: 'patient', label: 'Patient / Citizen', desc: 'Community member', icon: User },
-  { key: 'anm', label: 'ANM / CHO', desc: 'Auxiliary nurse / Health officer', icon: HeartPulse },
+  { key: 'anm', label: 'ANM', desc: 'Auxiliary Nurse Midwife', icon: HeartPulse },
+  { key: 'cho', label: 'CHO', desc: 'Community Health Officer', icon: Clipboard },
   { key: 'admin', label: 'Administrator', desc: 'System administrator', icon: ShieldCheck },
-  { key: 'bmo', label: 'BMO / CMHO', desc: 'Block / District health officer', icon: Hospital },
+  { key: 'bmo', label: 'BMO', desc: 'Block Medical Officer', icon: Hospital },
+  { key: 'cmho', label: 'CMHO', desc: 'Chief Medical & Health Officer', icon: Building },
 ];
 
 export default function LoginPage({ onLogin }) {
@@ -40,7 +42,7 @@ export default function LoginPage({ onLogin }) {
 
   return (
     <div className="login-container">
-      <div className="login-card" style={{ maxWidth: 640 }}>
+      <div className="login-card" style={{ maxWidth: 700 }}>
         <h1 className="login-title">ArogyaSetu AI</h1>
         <p className="login-subtitle">
           Multilingual Rural Healthcare &amp; Clinical Continuity Platform
@@ -49,7 +51,7 @@ export default function LoginPage({ onLogin }) {
         <form onSubmit={handleLogin}>
           <div className="form-group">
             <label className="form-label">Select your authorized role to continue</label>
-            <div className="role-selector" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+            <div className="role-selector" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
               {ROLES.map((role) => {
                 const Icon = role.icon;
                 return (

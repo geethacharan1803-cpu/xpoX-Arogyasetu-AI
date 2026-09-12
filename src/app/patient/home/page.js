@@ -17,7 +17,12 @@ export default function PatientHome() {
 
   useEffect(() => {
     async function loadPatientRecord() {
-      const pid = user?.patientId || 'P-2026-001';
+      const pid = user?.patientId;
+      if (!pid) {
+        // Patient user MUST have a linked patientId — never show another patient's data
+        setLoading(false);
+        return;
+      }
       try {
         const res = await fetch(`/api/patients/${pid}`);
         if (res.ok) {

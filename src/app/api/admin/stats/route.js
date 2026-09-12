@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { DEMO_FACILITIES } from '@/lib/demo-data';
+import { authorizeRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request) {
+  // Backend RBAC: Only admin, bmo, cmho can access system-wide stats
+  const auth = authorizeRequest(request, ['admin', 'bmo', 'cmho']);
+  if (!auth.authorized) return auth.response;
+
   try {
     const totalPatients = await queryOne('SELECT COUNT(*) as count FROM patients');
     const pregnantPatients = await queryOne('SELECT COUNT(*) as count FROM patients WHERE is_pregnant = 1');

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
+import { authorizeRequest } from '@/lib/api-auth';
 
 export async function GET(request) {
   try {
@@ -39,6 +40,10 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  // Backend RBAC: Only doctors and admin can authorize prescriptions
+  const auth = authorizeRequest(request, ['doctor', 'medical_officer', 'bmo', 'admin']);
+  if (!auth.authorized) return auth.response;
+
   try {
     const body = await request.json();
     const {

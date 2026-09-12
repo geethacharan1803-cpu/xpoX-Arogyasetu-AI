@@ -309,17 +309,21 @@ export default function AshaVoice() {
           </div>
         </div>
 
-        {/* Direct Text Intake Option */}
+        {/* Direct Text Intake — Always Visible */}
         <div style={{ marginTop: 'var(--space-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)', textAlign: 'left' }}>
+          <span className="text-xs text-muted" style={{ display: 'block', marginBottom: 'var(--space-xs)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+            ✍️ Type Patient Statement Directly
+          </span>
           <form onSubmit={handleManualSubmit} style={{ display: 'flex', gap: 'var(--space-xs)' }}>
             <input
               type="text"
               className="form-input"
-              placeholder="Or type/paste patient statement directly..."
+              placeholder="Type or paste patient's health concern in any language..."
               value={manualInput}
               onChange={(e) => setManualInput(e.target.value)}
+              style={{ fontSize: 'var(--font-size-base)' }}
             />
-            <button type="submit" className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+            <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }} disabled={!manualInput.trim() || processing}>
               Process Intake
             </button>
           </form>

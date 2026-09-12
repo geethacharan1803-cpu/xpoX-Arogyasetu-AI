@@ -93,14 +93,51 @@ const NAV_CONFIG = {
   },
 };
 
+/**
+ * Maps every role to a sidebar configuration.
+ * Roles that share similar workflows reuse config but with appropriate labels.
+ */
+function getNavConfigForRole(role) {
+  // Direct matches
+  if (NAV_CONFIG[role]) {
+    return NAV_CONFIG[role];
+  }
+
+  // Mapped roles
+  switch (role) {
+    case 'anm':
+      return { ...NAV_CONFIG.asha, label: 'ANM' };
+    case 'cho':
+      return { ...NAV_CONFIG.asha, label: 'CHO' };
+    case 'medical_officer':
+      return { ...NAV_CONFIG.doctor, label: 'Medical Officer' };
+    case 'bmo':
+      return { ...NAV_CONFIG.admin, label: 'BMO' };
+    case 'cmho':
+      return { ...NAV_CONFIG.admin, label: 'CMHO' };
+    default:
+      // Fallback: return a minimal nav config so sidebar never crashes
+      return {
+        label: role ? role.toUpperCase() : 'User',
+        sections: [
+          {
+            label: 'Navigation',
+            links: [
+              { href: '/', label: 'Home', icon: Home },
+            ]
+          }
+        ]
+      };
+  }
+}
+
 export default function Sidebar({ open, onClose }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
 
   if (!user) return null;
 
-  const navConfig = NAV_CONFIG[user.role];
-  if (!navConfig) return null;
+  const navConfig = getNavConfigForRole(user.role);
 
   const getInitials = (name) => {
     return name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();

@@ -147,7 +147,7 @@ export default function AdminDashboard() {
                   <tr key={log.id}>
                     <td className="text-xs text-muted">{new Date(log.created_at).toLocaleString()}</td>
                     <td><span className="badge badge-neutral">{log.action}</span></td>
-                    <td>{log.entity_type}</td>
+                    <td>{log.entity}</td>
                     <td className="text-xs font-mono">{log.entity_id}</td>
                     <td className="text-xs">{log.user_id || 'System'}</td>
                   </tr>

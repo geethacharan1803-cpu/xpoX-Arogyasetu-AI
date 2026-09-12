@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { authorizeRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
+  // Backend RBAC: Only admin can list all system users
+  const auth = authorizeRequest(request, ['admin', 'cmho']);
+  if (!auth.authorized) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const role = searchParams.get('role');
